@@ -654,4 +654,61 @@ namespace state {
         m_def->Apply(m_subject, m_applicable, update);
     }
 
+    // A typed property in user state.
+    template<typename T>
+    struct UserStateProperty {
+        int Index;
+
+        constexpr UserStateProperty(const int i): Index(i) {}
+        constexpr UserStateProperty<T>& operator=(const int i) { Index = i; return *this; }
+    };
+
+    // A general purpose user state object that can be used for the Input or UpdateState types.
+    // You define a class with static UserStateProperty(s) and use that in the first parameters.
+    // You can add speciations for the Get & Set as long as the data type can be converted to and from a float.
+    // ```cpp
+    // struct Input {
+    //    static const inline state::UserStateProperty<bool>  Jump = 0;
+    //    static const inline state::UserStateProperty<float> Speed = 1; // -1=backwards, 0=still, 1=forwards
+    // };
+    // auto u = UserState(2);
+    // auto jumping = u.Get(Input::Jump);
+    // u.Set(Input::Speed, 0.5f);
+    // ```
+    class UserState {
+    public:
+        // No user state
+        UserState(): m_data() {}
+
+        // Creates a UserState given the number of possible variables.
+        UserState(size_t size): m_data(size) {}
+
+        // Gets the value for the given user state property.
+        template<typename T>
+        inline T Get(UserStateProperty<T> prop) const {
+            return static_cast<T>(m_data[prop.Index]);
+        }
+
+        // Sets the value for the given user state property.
+        template<typename T>
+        inline void Set(UserStateProperty<T> prop, T value) {
+            m_data[prop.Index] = static_cast<float>(value);
+        }
+
+    private:
+        std::vector<float> m_data;
+    };
+
+    // Get for bool
+    template<>
+    inline bool UserState::Get(UserStateProperty<bool> prop) const {
+        return m_data[prop.Index] == 1.0f;
+    }
+
+    // Set for bool
+    template<>
+    inline void UserState::Set(UserStateProperty<bool> prop, bool value) {
+        m_data[prop.Index] = value ? 1.0f : 0.0f;
+    }
+
 }

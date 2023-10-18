@@ -54,9 +54,7 @@ namespace anim {
     // - Refactor Animation/Attribute structs into classes.
     // - Remove logging.
     // - Full stop/pause/resume operations.
-    // - Queue animations.
-    // - Extendable Update.
-    // - General purpose Input. 
+    // - Queue animations. 
     // - Switch over strings to a tag.
 
     using Easing = std::function<float(float)>;
@@ -569,27 +567,15 @@ namespace anim {
     };
 
     // Animation state machine types
-    
-    // ======================================
-    // Ideally these types are made more generalized so all sorts of animators can use them and they are not tied
-    // to a specific input/update type.
     struct Update {
-        float dt;
+        static const inline state::UserStateProperty<float> DeltaTime = 0;
     };
-    struct Vec {
-        float x, y, z;
-    };
-    struct Input { // should be made generic (a vector<float> should suffice, and you use an enum to keep track of what index maps to what)
-        bool jump;
-        bool onGround;
-        bool grabbingLedge;
-        bool pullLedge;
-        Vec velocity;
-        Vec lookAt;
-    };
+    state::UserState NewUpdate() {
+        return state::UserState(1);
+    }
     // ======================================
 
-    using StateTypes = state::Types<state_id, Animator, Animation, Input, Options, Update, float>;
+    using StateTypes = state::Types<state_id, Animator, Animation, state::UserState, Options, state::UserState, float>;
     using State = state::Active<StateTypes>;
     using StateDefinition = state::Definition<StateTypes>;
     using Machine = state::Machine<StateTypes>;
@@ -635,7 +621,7 @@ namespace anim {
         return true;
     }
     // Apply the given active states to the subject and update it.
-    void Apply(Animator& subject, const std::vector<State*>& active, const Update& update) {
+    void Apply(Animator& subject, const std::vector<State*>& active, const state::UserState& update) {
         // Get total weight.
         float totalWeight = 0.0f;
         for (auto state : active) {
@@ -661,19 +647,22 @@ namespace anim {
         }
         
         // Update subject.
-        LOG("Apply given "<<active.size()<<" active with "<<subject.attributes.set.size()<<" attributes and dt "<<update.dt)
-        subject.Update(update.dt);
+        LOG("Apply given "<<active.size()<<" active with "<<subject.attributes.set.size()<<" attributes and dt "<<update.Get(Update::DeltaTime))
+        subject.Update(update.Get(Update::DeltaTime));
         LOG("Apply done")
     }
+
     // If the state is done, it's non-live transitions can be evaluated.
     bool IsDone(const Animator& subject, const State& state) {
         auto& animation = state.GetDefinition()->GetData().name;
         return !subject.IsAnimating(animation);
     }
+
     // A definition for the root machine.
-    MachineDefinition NewDefinition(Input input, MachineOptions options = MachineOptions{}) {
+    MachineDefinition NewDefinition(state::UserState input, MachineOptions options = MachineOptions{}) {
         return MachineDefinition(Start, Apply, IsDone, input, options);
     }
+
     // A definition for a sub machine.
     MachineDefinition NewSubDefinition(MachineOptions options = MachineOptions{}) {
         return MachineDefinition(Start, Apply, IsDone, options);

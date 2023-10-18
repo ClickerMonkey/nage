@@ -1,5 +1,19 @@
 #include "../include/anim.h"
 
+struct Input {
+    static const inline state::UserStateProperty<bool>  Jump = 0;
+    static const inline state::UserStateProperty<bool>  OnGround = 1; 
+    static const inline state::UserStateProperty<bool>  GrabbingLedge = 2;
+    static const inline state::UserStateProperty<bool>  PullLedge = 3;
+    static const inline state::UserStateProperty<float> ForwardSpeed = 4; // -1=backwards, 0=still, 1=forwards
+    static const inline state::UserStateProperty<float> SideSpeed = 5;    // -1=left, 0=still, 1=right  
+    static const inline state::UserStateProperty<float> FallingSpeed = 6; // -1=up, 0=still, 1=down
+};
+
+state::UserState NewInput() {
+    return state::UserState(7);
+}
+
 auto TFloat = types::New<float>("float");
 
 void DefineTypes() {
@@ -8,6 +22,7 @@ void DefineTypes() {
         .ToString([](float s) -> std::string { return std::to_string(s); })
         .FromString([](std::string s) -> float { return std::stof(s); })
     );
+
     calc::Register<float>(TFloat);
 }
 
@@ -46,18 +61,18 @@ T Max(T a, T b) {
 
 
 // Weight functions
-float IdleWeight(const anim::Input& i, const anim::Update& u) { return 1.0f-Max(Abs(i.velocity.x), Abs(i.velocity.y)); }
-float ForwardWeight(const anim::Input& i, const anim::Update& u) { return i.velocity.y > 0 ? i.velocity.y : 0; }
-float BackwardWeight(const anim::Input& i, const anim::Update& u) { return i.velocity.y < 0 ? -i.velocity.y : 0; }
-float RightWeight(const anim::Input& i, const anim::Update& u) { return i.velocity.x > 0 ? i.velocity.x : 0; }
-float LeftWeight(const anim::Input& i, const anim::Update& u) { return i.velocity.x < 0 ? -i.velocity.x : 0; }
+float IdleWeight(const state::UserState& i, const state::UserState& u) { return 1.0f-Max(Abs(i.Get(Input::ForwardSpeed)), Abs(i.Get(Input::SideSpeed))); }
+float ForwardWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::ForwardSpeed) > 0 ? i.Get(Input::ForwardSpeed) : 0; }
+float BackwardWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::ForwardSpeed) < 0 ? -i.Get(Input::ForwardSpeed) : 0; }
+float RightWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::SideSpeed) > 0 ? i.Get(Input::SideSpeed) : 0; }
+float LeftWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::SideSpeed) < 0 ? -i.Get(Input::SideSpeed) : 0; }
 // Transition conditions
-bool Jumped(const anim::Input& i, const anim::Update& u) { return i.jump; }
-bool IsFalling(const anim::Input& i, const anim::Update& u) { return i.velocity.z < 0 && !i.onGround; }
-bool OnGround(const anim::Input& i, const anim::Update& u) { return i.onGround; }
-bool LedgeGrabbed(const anim::Input& i, const anim::Update& u) { return i.grabbingLedge; }
-bool LedgeLetGo(const anim::Input& i, const anim::Update& u) { return !i.grabbingLedge || i.onGround; }
-bool LedgePulled(const anim::Input& i, const anim::Update& u) { return i.pullLedge; }
+bool Jumped(const state::UserState& i, const state::UserState& u) { return i.Get(Input::Jump); }
+bool IsFalling(const state::UserState& i, const state::UserState& u) { return i.Get(Input::FallingSpeed) < 0 && !i.Get(Input::OnGround); }
+bool OnGround(const state::UserState& i, const state::UserState& u) { return i.Get(Input::OnGround); }
+bool LedgeGrabbed(const state::UserState& i, const state::UserState& u) { return i.Get(Input::GrabbingLedge); }
+bool LedgeLetGo(const state::UserState& i, const state::UserState& u) { return !i.Get(Input::PullLedge) || i.Get(Input::OnGround); }
+bool LedgePulled(const state::UserState& i, const state::UserState& u) { return i.Get(Input::PullLedge); }
 
 int main() {
     DefineTypes();
@@ -65,14 +80,17 @@ int main() {
     std::cout << "It compiles!" << std::endl;
     std::cout << std::fixed << std::setprecision(2);
 
-    auto initialInput = anim::Input{
-        .jump = false,
-        .onGround = true,
-        .grabbingLedge = false,
-        .pullLedge = false,
-        .velocity = anim::Vec{0, 0, 0},
-        .lookAt = anim::Vec{1.0f, 0, 0},
-    };
+    auto initialInput = NewInput();
+    initialInput.Set(Input::Jump, false);
+    initialInput.Set(Input::OnGround, true);
+    initialInput.Set(Input::GrabbingLedge, false);
+    initialInput.Set(Input::PullLedge, false);
+    initialInput.Set(Input::ForwardSpeed, 0.0f);
+    initialInput.Set(Input::SideSpeed, 0.0f);
+    initialInput.Set(Input::FallingSpeed, 0.0f);
+    
+    auto update = anim::NewUpdate();
+    update.Set(anim::Update::DeltaTime, 0.1f);
 
     // All states are constantly active and blended together based on speed & direction.
     auto grounded = anim::NewSubDefinition(anim::MachineOptions{.FullyActive = true});
@@ -117,40 +135,38 @@ int main() {
     animator.Init("position", TFloat);
 
     auto machine = anim::Machine(&def, animator);
-    auto update = anim::Update{.dt = 0.1f};
-
     machine.Init(update);
 
     // idle, walk, run, jump, land, grabLedge, move left, pull up
     for (int i = 0; i < 36; i++) {
         auto& input = machine.GetInput();
         if (i == 5) {
-            input->velocity.y = 0.5f;
+            input->Set(Input::ForwardSpeed, 0.5f);
         } else if (i == 10) {
-            input->velocity.y = 1.0f;
+            input->Set(Input::ForwardSpeed, 1.0f);
         } else if (i == 20) {
-            input->jump = true;
-            input->velocity.z = 1.0f;
-            input->onGround = false;
+            input->Set(Input::Jump, true);
+            input->Set(Input::FallingSpeed, 1.0f);
+            input->Set(Input::OnGround, false);
         } else if (i > 20 && i < 30) {
-            input->jump = false;
-            input->velocity.z -= 0.2f;
+            input->Set(Input::Jump, false);
+            input->Set(Input::FallingSpeed, input->Get(Input::FallingSpeed) - 0.2f);
         } else if (i == 30) {
-            input->velocity.z = 0.0f;
-            input->onGround = true;
+            input->Set(Input::OnGround, true);
+            input->Set(Input::FallingSpeed, 0.0f);
         } else if (i == 32) {
-            input->grabbingLedge = true;
-            input->onGround = false;
-            input->velocity.x = -1.0f;
-            input->velocity.y = 1.0f;
+            input->Set(Input::GrabbingLedge, true);
+            input->Set(Input::OnGround, false);
+            input->Set(Input::SideSpeed, -1.0f);
+            input->Set(Input::ForwardSpeed, 1.0f);
         } else if (i == 34) {
-            input->velocity.x = 0.0f;
-            input->velocity.y = 0.0f;
-            input->pullLedge = true;
+            input->Set(Input::SideSpeed, 0.0f);
+            input->Set(Input::ForwardSpeed, 0.0f);
+            input->Set(Input::PullLedge, true);
         } else if (i == 35) {
-            input->pullLedge = false;
-            input->onGround = true;
-            input->grabbingLedge = false;
+            input->Set(Input::PullLedge, false);
+            input->Set(Input::OnGround, true);
+            input->Set(Input::GrabbingLedge, false);
         }
 
         machine.Update(update);
