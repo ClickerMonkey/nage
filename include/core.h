@@ -10,14 +10,7 @@
 #include <memory>
 #include <variant>
 
-bool doLogging = false;
-
-#define LOG_ENABLED true
-#ifdef LOG_ENABLED
-#define LOG(message) if (doLogging) { std::cout << std::string(__FILE__).substr(std::string(__FILE__).size() - 12) << " (" << __LINE__ << ") " << message << std::endl; }
-#else
-#define LOG(message)
-#endif
+#include "debug.h"
 
 // TODO
 // - Finish Documentation

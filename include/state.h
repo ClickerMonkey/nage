@@ -13,6 +13,7 @@
 #include <ranges>
 #include <bits/stdc++.h>
 
+#include "debug.h"
 #include "core.h"
 
 // The state namespace stores a generic state machine.
@@ -39,7 +40,6 @@ namespace state {
 
     // TODO
     // - Add machine registry & id so you don't have to deal with references to machine instances or machines?
-    // - Remove logging
     // - Finish documentation
 
     // A definition for a state a machine can be in.
@@ -401,12 +401,14 @@ namespace state {
         constexpr auto& GetSub() const noexcept { return m_sub; }
         void Update(const input_t& input, const update_t& update) {
             if (m_sub) {
-                LOG("Active::Update sub "<<m_def->GetData().name)
+                LOG(debug, "Active::Update sub "<<m_def->GetData().name)
+
                 m_sub->Update(update);
             } else {
                 if (m_def->IsWeightLive()) {
                     m_weight = m_def->GetWeight(input, update);
-                    LOG("Active::Update weight "<<m_def->GetData().name<<": "<<m_weight)
+
+                    LOG(debug, "Active::Update weight "<<m_def->GetData().name<<": "<<m_weight)
                 }
             }
         }
@@ -448,20 +450,24 @@ namespace state {
             auto end = trans.GetEnd();
             auto active = GetActive(end);
             if (active != nullptr) {
-                LOG("Machine::Transitions cannot transition to, already active: "<<active->GetDefinition()->GetData().name)
+                LOG(warn, "Machine::Transitions cannot transition to, already active: "<<active->GetDefinition()->GetData().name)
+
                 continue;
             }
             auto& input = *m_input;
             if (trans.Eval(input, update)) {
                 const auto stateDef = m_def->GetState(end);
-                LOG("Machine::Transitions transition to "<<stateDef->GetID())
+                LOG(info, "Machine::Transitions transition to "<<stateDef->GetID())
+
                 Active<T> state(stateDef, m_subject, input, update, this);
                 if (state.HasSub()) {
-                    LOG("Machine::Transitions init sub machine "<<stateDef->GetID())
+                    LOG(info, "Machine::Transitions init sub machine "<<stateDef->GetID())
+
                     state.GetSub()->Init(update);
                 }
                 if (m_def->Start(m_subject, state, trans, outro)) {
-                    LOG("Machine::Transitions started "<<stateDef->GetID())
+                    LOG(info, "Machine::Transitions started "<<stateDef->GetID())
+
                     out.push_back(std::move(state));
                     transitioned++;
                 }
@@ -496,22 +502,27 @@ namespace state {
         // If always live, add all states to m_activeQueue (only if transitions is empty, otherwise use user supplied transition order)
         if (options.FullyActive && transitions.empty()) {
             auto& input = *m_input;
-            LOG("Machine::Init starting live states: "<<m_def->GetStates().size())
+            LOG(info, "Machine::Init starting live states: "<<m_def->GetStates().size())
+
             for (const auto& stateDef : m_def->GetStates()) {
-                LOG("Machine::Init try start "<<stateDef.GetID())
+                LOG(info, "Machine::Init try start "<<stateDef.GetID())
+
                 Active<T> state(&stateDef, m_subject, input, update, this);
                 if (state.HasSub()) {
-                    LOG("Machine::Init init sub machine "<<stateDef.GetID())
+                    LOG(info, "Machine::Init init sub machine "<<stateDef.GetID())
+
                     state.GetSub()->Init(update);
                 }
                 Transition<T> trans(stateDef.GetID());
                 if (m_def->Start(m_subject, state, trans, nullptr)) {
-                    LOG("Machine::Init started "<<stateDef.GetID())
+                    LOG(info, "Machine::Init started "<<stateDef.GetID())
+
                     m_activeQueue.push_back(std::move(state));
                 }
             }
         } else if (!transitions.empty()) {
-            LOG("Machine::Init using global transitions")
+            LOG(info, "Machine::Init using global transitions")
+
             Transitions(transitions, update, false, m_activeQueue, nullptr);
         }
     }
@@ -532,22 +543,26 @@ namespace state {
                 } else if (remainingSpace > 0) {
                     // If a user has supplied a custom sorter, use it.
                     if (options.ActivePriority) {
-                        LOG("Machine::Update sorting with custom priority function.")
+                        LOG(info, "Machine::Update sorting with custom priority function.")
+
                         std::sort(m_activeQueue.begin(), m_activeQueue.end(), options.ActivePriority);
                     }
                     // Chop off the unwanted states.
-                    LOG("Machine::Update chopping off from queue: "<<m_activeQueue.size()-remainingSpace)
+                    LOG(info, "Machine::Update chopping off from queue: "<<m_activeQueue.size()-remainingSpace)
+
                     m_activeQueue.resize(remainingSpace);
                 } else {
                     // We can't make any more active.
-                    LOG("Machine::Update active list full, unable to add requested: "<<m_activeQueue.size())
+                    LOG(info, "Machine::Update active list full, unable to add requested: "<<m_activeQueue.size())
+
                     m_activeQueue.clear();
                 }
             }
             // If there are still states to activate...
             if (!m_activeQueue.empty()) {
                 for (auto& active : m_activeQueue) {
-                    LOG("Machine::Update added to active: "<<active.GetDefinition()->GetData().name)
+                    LOG(info, "Machine::Update added to active: "<<active.GetDefinition()->GetData().name)
+
                     m_active.push_back(std::move(active));
                 }
                 m_activeQueue.clear();
@@ -575,11 +590,14 @@ namespace state {
                 auto done = state->IsDone(m_subject, m_def);
                 if (!done) {
                     state->Update(*m_input, update);
+                } else {
+                    LOG(info, "Machine::Update "<<state->GetDefinition()->GetID()<<" done due to IsDone")
                 }
 
                 auto transitioned = Transitions(state->GetDefinition()->GetTransitions(), update, !done, m_activeQueue, &(*state));
-                if (transitioned > 0) {
-                    LOG("Machine::Update "<<state->GetDefinition()->GetID()<<" done due to transition")
+                if (transitioned > 0 && !done) {
+                    LOG(info, "Machine::Update "<<state->GetDefinition()->GetID()<<" done due to transition")
+
                     done = true;
                 }
 
@@ -650,7 +668,8 @@ namespace state {
             m_applicable.resize(options.AppliedMax);
         }
         
-        LOG("Machine::Applying "<<m_applicable.size()<<" out of "<<m_active.size()<<" active states")
+        LOG(debug, "Machine::Applying "<<m_applicable.size()<<" out of "<<m_active.size()<<" active states")
+        
         m_def->Apply(m_subject, m_applicable, update);
     }
 

@@ -1,3 +1,5 @@
+// #define LOG_ENABLED true
+
 #include "../include/anim.h"
 
 // Inputs that can drive the weight and condition functions.
@@ -89,7 +91,7 @@ bool Jumped(const state::UserState& i, const state::UserState& u) { return i.Get
 bool IsFalling(const state::UserState& i, const state::UserState& u) { return i.Get(Input::FallingSpeed) < 0 && !i.Get(Input::OnGround); }
 bool OnGround(const state::UserState& i, const state::UserState& u) { return i.Get(Input::OnGround); }
 bool LedgeGrabbed(const state::UserState& i, const state::UserState& u) { return i.Get(Input::GrabbingLedge); }
-bool LedgeLetGo(const state::UserState& i, const state::UserState& u) { return !i.Get(Input::PullLedge) || i.Get(Input::OnGround); }
+bool LedgeLetGo(const state::UserState& i, const state::UserState& u) { return !i.Get(Input::GrabbingLedge) || i.Get(Input::OnGround); }
 bool LedgePulled(const state::UserState& i, const state::UserState& u) { return i.Get(Input::PullLedge); }
 
 int main() {
@@ -158,39 +160,53 @@ int main() {
     auto machine = anim::Machine(&def, animator);
     machine.Init(update);
 
-    // idle, walk, run, jump, land, grabLedge, move left, pull up
-    for (int i = 0; i < 36; i++) {
+    // [ 0- 4] idle
+    // [ 5- 9] walk half speed
+    // [10-19] run full speed
+    // [20-20] jump
+    // [21-29] go up and fall down
+    // [30-30] land
+    // [31-31] continue running
+    // [32-32] grab ledge 
+    // [33-33] climb up and left
+    // [34-34] hang still on edge
+    // [35-35] pull yourself up edge
+    // [36-xx] you pulled yourself up and are standing idly
+
+    for (int i = 0; i < 40; i++) {
         auto& input = machine.GetInput();
-        if (i == 5) {
+
+        if (i == 5) { // walk
             input->Set(Input::ForwardSpeed, 0.5f);
-        } else if (i == 10) {
+        } else if (i == 10) { // run
             input->Set(Input::ForwardSpeed, 1.0f);
-        } else if (i == 20) {
+        } else if (i == 20) { // jump
             input->Set(Input::Jump, true);
             input->Set(Input::FallingSpeed, 1.0f);
             input->Set(Input::OnGround, false);
-        } else if (i > 20 && i < 30) {
+        } else if (i > 20 && i < 30) { // up & down
             input->Set(Input::Jump, false);
             input->Set(Input::FallingSpeed, input->Get(Input::FallingSpeed) - 0.2f);
-        } else if (i == 30) {
+        } else if (i == 30) { // land
             input->Set(Input::OnGround, true);
             input->Set(Input::FallingSpeed, 0.0f);
-        } else if (i == 32) {
+        } else if (i == 32) { // climb up and left
             input->Set(Input::GrabbingLedge, true);
             input->Set(Input::OnGround, false);
             input->Set(Input::SideSpeed, -1.0f);
             input->Set(Input::ForwardSpeed, 1.0f);
-        } else if (i == 34) {
+        } else if (i == 34) { // pause climbing
             input->Set(Input::SideSpeed, 0.0f);
             input->Set(Input::ForwardSpeed, 0.0f);
+        } else if (i == 35) { // pull self up
             input->Set(Input::PullLedge, true);
-        } else if (i == 35) {
+        } else if (i == 36) { // standing on ledge that I climbed up
             input->Set(Input::PullLedge, false);
             input->Set(Input::OnGround, true);
             input->Set(Input::GrabbingLedge, false);
         }
-
-        // doLogging = i >= 4 && i <= 6;
+        
+        // LogLevel = i >= 33 && i <= 36 ? debug : none;
 
         machine.Update(update);
         machine.Apply(update);

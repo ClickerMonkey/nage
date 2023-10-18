@@ -4,6 +4,7 @@
 #include <vector>
 #include <limits>
 
+#include "debug.h"
 #include "types.h"
 
 // The calculator namespace is used to define math operations on types. 

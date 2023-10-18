@@ -14,7 +14,7 @@
 #include <unordered_set>
 #include <iomanip>
 
-
+#include "debug.h"
 #include "state.h"
 #include "types.h"
 #include "calcs.h"
@@ -118,42 +118,78 @@ namespace anim {
         out.Set(c->Adds(out, points[3].data, d3));
     }
 
+    // Parameters we specify for animation can be stacked on each other - "joined".
+    // As an example, the animation could have a duration of 2s but the user specified
+    // they want the duration halved (multiplied by 0.5). They could have it overridden
+    // via set OR added to. By default a parameter is unset meaning it has no affect
+    // when joined and the default value is used.
     enum class ParamType { unset, set, add, multiply };
 
+    // A parameter to hold a value and type and it can be joined together with any 
+    // number of parameters to produce a final value.
     template<typename T>
-    struct Param {
-        T value;
-        ParamType type;
+    class Param {
+    public:
+        // Creates an unset parameter.
+        Param(): m_value(T()), m_type(ParamType::unset) {}
 
-        Param(): value(T()), type(ParamType::unset) {}
-        Param(T v): value(std::move(v)), type(ParamType::set) {}
-        Param(T v, ParamType t): value(std::move(v)), type(t) {}
+        // Creates a set parameter with the given value. 
+        Param(T value): m_value(std::move(value)), m_type(ParamType::set) {}
 
-        void Set(T v, ParamType t) { value = std::move(v); type = t; }
-        Param<T>& operator=(T v) { Set(v, ParamType::set); return *this; }
-        Param<T>& operator+=(T v) { Set(v, ParamType::add); return *this; }
-        Param<T>& operator*=(T v) { Set(v, ParamType::multiply); return *this; }
-        T Get(T defaultValue) const { return Param::Joins(defaultValue, {*this}); }
-        Param<T> Join(T defaultValue, const Param<T>& o) const {
-            if (type == ParamType::unset) return o;
-            if (o.type == ParamType::unset) return *this;
+        // Creates a parameter with the given type.
+        Param(T value, ParamType type): m_value(std::move(value)), m_type(type) {}
 
-            return Param<T>(Param::Joins(defaultValue, {*this, o}));
-        }
+        // Sets the parameter value and type.
+        constexpr void Set(T value, ParamType type) noexcept { m_value = std::move(value); m_type = type; }
 
-        static T Joins(T defaultValue, std::initializer_list<Param<T>> params) {
-            auto value = defaultValue;
-            for (auto &param : params) {
-                switch (param.type) {
-                case ParamType::set: value = param.value; break;
-                case ParamType::add: value += param.value; break;
-                case ParamType::multiply: value *= param.value; break;
-                case ParamType::unset: /* ignore*/ break;
-                }
+        // A param can be set given the raw value.
+        constexpr Param<T>& operator=(T v) noexcept { Set(v, ParamType::set); return *this; }
+
+        // A param can be set as add by doing `p += 10`.
+        constexpr Param<T>& operator+=(T v) noexcept { Set(v, ParamType::add); return *this; }
+
+        // A param can be set as multiply by doing `p *= 10`.
+        constexpr Param<T>& operator*=(T v) noexcept { Set(v, ParamType::multiply); return *this; }
+
+        // Returns the value of the parameter given the default value.
+        // If the parameter is unset the default value is returned. If the parameter
+        // is add or multiply the value on the parameter is applied to the default value and its returned.
+        // Otherwise a set parameter will return the value stored on the param and ignore the default value.
+        constexpr T Get(const T defaultValue) const noexcept {
+            switch (m_type) {
+            case ParamType::set: return m_value;
+            case ParamType::add: return DoAdd(defaultValue, m_value);
+            case ParamType::multiply: return DoMultiply(defaultValue, m_value);
+            default: return defaultValue;
             }
-            return value;
         }
+
+        // Joins this parameter with the given following parameter assuming the default value.
+        // To join we need the default value in the event this parameter and the follower are both not unset.
+        // The returned parameter is either going to be a copy of this, a copy of follower, or a set 
+        // parameter of the computed value.
+        Param<T> Join(const T defaultValue, const Param<T>& follower) const {
+            if (m_type == ParamType::unset) return follower;
+            if (follower.m_type == ParamType::unset) return *this;
+
+            return Param<T>(follower.Get(Get(defaultValue)));
+        }
+        
+        // How to add for type T. Allows for speciation.
+        static constexpr T DoAdd(const T a, const T b) { return a + b; }
+        // How to multiply for type T. Allows for speciation.
+        static constexpr T DoMultiply(const T a, const T b) { return a * b; }
+
+    private:
+        T m_value;
+        ParamType m_type;
     };
+
+    // Boolean operation variation.
+    template<> constexpr bool Param<bool>::DoAdd(const bool a, const bool b) { return a || b; }
+    template<> constexpr bool Param<bool>::DoMultiply(const bool a, const bool b) { return a && b; }
+
+
 
     struct AnimationOptions {
         Param<float> delay; // seconds before animation starts
@@ -163,6 +199,7 @@ namespace anim {
         Param<float> scale; // how much to scale the animation relative to its default/resting value.
         Param<float> clipStart; // seconds to start in the animation data, excluding everything before this
         Param<float> clipEnd; // seconds to end in the animation data, excluding everything before this
+        Param<float> rest; // the delta (0->1) in the animation data that is considered the resting state - so scaling can be done relative to this.
         Path path; // convert animation data into a single point given a time (0->1)
         Easing easing; // animation velocity function
 
@@ -175,6 +212,7 @@ namespace anim {
             o.clipStart = clipStart.Join(0, next.clipStart);
             o.clipEnd = clipEnd.Join(1, next.clipEnd);
             o.scale = scale.Join(1, next.scale);
+            o.rest = rest.Join(1, next.rest);
             o.path = next.path ? next.path : path;
             o.easing = JoinEasing(easing, next.easing);
             return o;
@@ -277,7 +315,7 @@ namespace anim {
             applyDelta = nextApplyDelta != -1 ? nextApplyDelta : 1;
             done = end != -1 && time >= end;
 
-            LOG("DataAnimator::Update time: "<<time<<" apply: "<<apply<<" applyDelta: "<<applyDelta<<" done: "<<done<<" scale: "<<scale)
+            LOG(debug, "DataAnimator::Update time: "<<time<<" apply: "<<apply<<" applyDelta: "<<applyDelta<<" done: "<<done<<" scale: "<<scale)
         }
         void StopIn(float dt) noexcept {
             stopAt = time + dt;
@@ -325,11 +363,11 @@ namespace anim {
 
                         lastUpdatedFrame = frame;
                     }
-                    LOG("Attribute::Update applying for "<<animator->animation<<"."<<animator->attribute->attribute<<" with scale "<<scale)
+                    LOG(debug, "Attribute::Update applying for "<<animator->animation<<"."<<animator->attribute->attribute<<" with scale "<<scale)
                 }
 
                 if (animator->done) {
-                    LOG("Attribute::Update animator for "<<animator->animation<<"."<<animator->attribute->attribute<<" done after "<<animator->time)
+                    LOG(info, "Attribute::Update animator for "<<animator->animation<<"."<<animator->attribute->attribute<<" done after "<<animator->time)
 
                     animators.erase(animator);
                 } else {
@@ -355,7 +393,8 @@ namespace anim {
         void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
             for (auto animator = animators.rbegin(); animator != animators.rend(); ++animator) {
                 if (!animator->done && animator->animation == animation) {
-                    LOG("Attribute::ApplyOptions "<<animation<<" "<<weight)
+                    LOG(debug, "Attribute::ApplyOptions "<<animation<<" "<<weight)
+
                     animator->AddOptions(weight);
                     return;
                 }
@@ -384,11 +423,6 @@ namespace anim {
                     os << anim.animation << "(scale=" << anim.scale << ", time=" << anim.time << ") ";
                 }
             }
-            // for (auto& anim : a.animators) {
-            //     if (anim.weight <= 0) {
-            //         os << anim.data.animation << "(inactive, time=" << anim.time << ") ";
-            //     }
-            // }
             return os;
         }
     };
@@ -402,7 +436,8 @@ namespace anim {
         AttributeSet(const std::vector<AnimateRequest>& requests) {
             for (auto& request : requests) {
                 auto [anim, options] = request;
-                LOG("AttributeSet::AttributeSet handling request "<<anim.name<<" with attributes: "<<anim.attributes.size())
+                LOG(info, "AttributeSet::AttributeSet handling request "<<anim.name<<" with attributes: "<<anim.attributes.size())
+                
                 for (auto& animAttr : anim.attributes) {
                     auto resolvedOptions = anim.options.Join(animAttr.options).Join(options);
                     auto existing = GetAttribute(animAttr.attribute);
@@ -442,7 +477,7 @@ namespace anim {
 
                 auto existing = GetAttribute(attr.first);
 
-                LOG("AttributeSet::Transition "<<attr.first<<" new animators: "<<attr.second.animators.size())
+                LOG(info, "AttributeSet::Transition "<<attr.first<<" new animators: "<<attr.second.animators.size())
                 if (existing == nullptr || existing->animators.empty()) {
                     set[attr.first] = attr.second;
                 } else {
@@ -460,7 +495,7 @@ namespace anim {
                         for (auto& animator : forOutro) {
                             animator->StopIn(minDelay);
                         }
-                        LOG("AttributeSet::Transition stopped "<<forOutro.size()<<" in "<<minDelay)
+                        LOG(debug, "AttributeSet::Transition stopped "<<forOutro.size()<<" in "<<minDelay)
                     }
                     // TODO insert in any transition animators based on transition options
                     // see: https://github.com/anim8js/anim8js/blob/master/src/AttrimatorMap.js#L269
@@ -501,11 +536,6 @@ namespace anim {
         }
     };
 
-
-    struct AnimationDefinition {
-
-    };
-
     struct Animator {
         AttributeSet attributes;
         std::map<attribute_id, types::Value> values;
@@ -520,7 +550,9 @@ namespace anim {
         }
         void Transition(const std::vector<AnimateRequest>& requests, const TransitionOptions& options, const std::unordered_set<animation_id>& outro) {
             auto transitionAttributes = AttributeSet(requests);
-            LOG("Animator::Transition "<<requests.size()<<" to attributes: "<<transitionAttributes.set.size())
+
+            LOG(info, "Animator::Transition "<<requests.size()<<" to attributes: "<<transitionAttributes.set.size())
+
             attributes.Transition(transitionAttributes, options, outro);
         }
         void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
@@ -597,8 +629,6 @@ namespace anim {
         auto& transitionOptions = trans.GetOptions();
         auto transitionOutro = std::unordered_set<animation_id>();
 
-        LOG("Start "<<state.GetDefinition()->GetID())
-
         if (!state.HasSub()) {
             auto def = state.GetDefinition();
             auto& animation = def->GetData();
@@ -608,8 +638,6 @@ namespace anim {
             transitionRequests.emplace_back(animation, animationOptions);
         }
 
-        LOG("Start "<<state.GetDefinition()->GetID()<<" requests "<<transitionRequests.size())
-
         if (outro != nullptr) {
             outro->Iterate([&](const State& state) -> bool {
                 auto& animation = state.GetDefinition()->GetData().name;
@@ -618,7 +646,7 @@ namespace anim {
             });
         }
 
-        LOG("Start "<<state.GetDefinition()->GetID()<<" outros "<<transitionOutro.size())
+        LOG(info, "Start "<<state.GetDefinition()->GetID()<<" requests "<<transitionRequests.size() <<" outros "<<transitionOutro.size())
 
         subject.Transition(transitionRequests, transitionOptions.transition, transitionOutro);
         
@@ -665,10 +693,11 @@ namespace anim {
             });
         }
         
+        LOG(info, "Apply given "<<active.size()<<" active with "<<subject.attributes.set.size()<<" attributes and dt "<<update.Get(Update::DeltaTime)<<" with total effective scale "<<totalEffectiveScale)
         // Update subject.
-        LOG("Apply given "<<active.size()<<" active with "<<subject.attributes.set.size()<<" attributes and dt "<<update.Get(Update::DeltaTime))
         subject.Update(update.Get(Update::DeltaTime));
-        LOG("Apply done")
+
+        LOG(debug, "Apply done")
     }
 
     // If the state is done, it's non-live transitions can be evaluated.
