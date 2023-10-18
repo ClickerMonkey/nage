@@ -70,19 +70,19 @@ anim::AnimationOptions IdleWeight(const state::UserState& i, const state::UserSt
 }
 anim::AnimationOptions ForwardWeight(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::ForwardSpeed) > 0 ? i.Get(Input::ForwardSpeed) : 0;
-    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+    return anim::AnimationOptions{ .scale = speed };
 }
 anim::AnimationOptions BackwardWeight(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::ForwardSpeed) < 0 ? -i.Get(Input::ForwardSpeed) : 0;
-    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+    return anim::AnimationOptions{ .scale = speed };
 }
 anim::AnimationOptions RightWeight(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::SideSpeed) > 0 ? i.Get(Input::SideSpeed) : 0;
-    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+    return anim::AnimationOptions{ .scale = speed };
 }
 anim::AnimationOptions LeftWeight(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::SideSpeed) < 0 ? -i.Get(Input::SideSpeed) : 0;
-    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+    return anim::AnimationOptions{ .scale = speed };
 }
 // Transition conditions
 bool Jumped(const state::UserState& i, const state::UserState& u) { return i.Get(Input::Jump); }
@@ -190,16 +190,17 @@ int main() {
             input->Set(Input::GrabbingLedge, false);
         }
 
+        // doLogging = i >= 4 && i <= 6;
+
         machine.Update(update);
         machine.Apply(update);
         std::cout << "Frame[" << i << "]: " << animator << std::endl;
     }
 
     // Thoughts:
-    // 1. Maybe to simplify input, it's always passed to Machine->Update instead of being a shared_ptr held on the machine and its subs.
-    // 2. I don't like many of the pointers in state.h. I tried to store defs as references but then those types couldn't be used in containers. I feel like shared_ptr is better, but it feels heavy to me.
-    // 3. The above code uses maps. There are more efficient structures that could be used. In previous implementations something like AddState would return an identifier that could be used in AddTransition. It was a simple auto-incrementing value. But what about attributes & animations?
-    // 4. Maybe instead of passing around pointers in state, add state::Registry which holds states and machines that can be referenced by small identifiers?
+    // - I don't like many of the pointers in state.h. I tried to store defs as references but then those types couldn't be used in containers. I feel like shared_ptr is better, but it feels heavy to me.
+    // - The above code uses maps. There are more efficient structures that could be used. In previous implementations something like AddState would return an identifier that could be used in AddTransition. It was a simple auto-incrementing value. But what about attributes & animations?
+    // - Maybe instead of passing around pointers in state, add state::Registry which holds states and machines that can be referenced by small identifiers?
 
     return 0;
 }

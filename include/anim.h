@@ -216,9 +216,20 @@ namespace anim {
         }
     };
 
-    template<typename D>
-    struct DataAnimator {
-        D data;
+    struct AnimationAttribute {
+        attribute_id attribute;
+        AnimationOptions options;
+        std::vector<Point> points;
+    };
+    struct Animation {
+        animation_id name;
+        AnimationOptions options;
+        std::vector<AnimationAttribute> attributes;
+    };
+
+    struct AttributeAnimator {
+        animation_id animation;
+        const AnimationAttribute* attribute;
         AnimationOptions options;
         float delay; // seconds before animation starts
         float duration; // how longs animation lasts
@@ -234,9 +245,9 @@ namespace anim {
         bool apply;
         float applyDelta;
 
-        DataAnimator() = default;
-        DataAnimator(const D d, const AnimationOptions opts): 
-            data(std::move(d)), options(opts)
+        AttributeAnimator() = default;
+        AttributeAnimator(const animation_id& anim, const AnimationAttribute* attr, const AnimationOptions opts): 
+            animation(anim), attribute(attr), options(opts)
         {
             ApplyOptions();
             time = 0.0f;
@@ -252,8 +263,7 @@ namespace anim {
         constexpr float AnimationTime(float t) const noexcept { return fmod(IntoAnimation(t), IterationTime()); }
         constexpr float Delta(float t) const noexcept { return AnimationTime(t) / duration; }
         constexpr float ApplyDelta(float t) const noexcept { auto d = Delta(t); return d < 0 || d > 1 ? -1 : Ease(calc::Lerp<float>(clipStart, clipEnd, d), options.easing); }
-        constexpr float EffectiveScale() const noexcept { return scale; }
-        constexpr bool IsEffective() const noexcept { return scale != 0 && clipEnd > clipStart; }
+        constexpr bool IsEffective() const noexcept { return scale != 0; }
         constexpr int Iteration(float t) const noexcept { return t < delay ? -1 : floor(IntoAnimation(t) / IterationTime()); }
         constexpr bool IsStopping() const noexcept { return stopAt != -1; }
         void Update(float dt) {
@@ -267,13 +277,14 @@ namespace anim {
             applyDelta = nextApplyDelta != -1 ? nextApplyDelta : 1;
             done = end != -1 && time >= end;
 
-            LOG("DataAnimator::Update time: "<<time<<" apply: "<<apply<<" applyDelta: "<<applyDelta<<" done: "<<done<<" effectiveWeight: "<<EffectiveScale())
+            LOG("DataAnimator::Update time: "<<time<<" apply: "<<apply<<" applyDelta: "<<applyDelta<<" done: "<<done<<" scale: "<<scale)
         }
         void StopIn(float dt) noexcept {
             stopAt = time + dt;
         }
         void AddOptions(const AnimationOptions& additional) {
             options = options.Join(additional);
+            ApplyOptions();
         }
         void ApplyOptions() {
             delay = options.delay.Get(0);
@@ -285,27 +296,8 @@ namespace anim {
             scale = options.scale.Get(1);
         }
     };
-
-    struct AnimationAttribute {
-        attribute_id attribute;
-        AnimationOptions options;
-        std::vector<Point> points;
-    };
-    struct Animation {
-        animation_id name;
-        AnimationOptions options;
-        std::vector<AnimationAttribute> attributes;
-    };
-    struct AttributeAnimator {
-        animation_id animation;
-        const AnimationAttribute* attribute;
-
-        AttributeAnimator() = default;
-        AttributeAnimator(const animation_id& anim, const AnimationAttribute* attr):
-            animation(anim), attribute(attr) {}
-    };
     struct Attribute {
-        std::vector<DataAnimator<AttributeAnimator>> animators;
+        std::vector<AttributeAnimator> animators;
         long frame;
         long lastUpdatedFrame;
 
@@ -322,22 +314,22 @@ namespace anim {
             while (animator != animators.end()) {
                 animator->Update(dt);
                 if (animator->apply) {
-                    auto scale = animator->EffectiveScale();
+                    auto scale = animator->scale;
                     if (scale > 0) {
                         auto& path = animator->options.path;
                         if (!path) {
                             path = LinearPath;
                         }
-                        path(animator->data.attribute->points, animator->applyDelta, temp1);
+                        path(animator->attribute->points, animator->applyDelta, temp1);
                         temp2.Set(c->Adds(temp2, temp1, scale));
 
                         lastUpdatedFrame = frame;
                     }
-                    LOG("Attribute::Update applying for "<<animator->data.animation<<"."<<animator->data.attribute->attribute<<" with scale "<<scale)
+                    LOG("Attribute::Update applying for "<<animator->animation<<"."<<animator->attribute->attribute<<" with scale "<<scale)
                 }
 
                 if (animator->done) {
-                    LOG("Attribute::Update animator for "<<animator->data.animation<<"."<<animator->data.attribute->attribute<<" done after "<<animator->time)
+                    LOG("Attribute::Update animator for "<<animator->animation<<"."<<animator->attribute->attribute<<" done after "<<animator->time)
 
                     animators.erase(animator);
                 } else {
@@ -354,7 +346,7 @@ namespace anim {
         }
         bool IsAnimating(const animation_id& animation) const noexcept {
             for (auto& animator : animators) {
-                if (!animator.done && animator.data.animation == animation) {
+                if (!animator.done && animator.animation == animation) {
                     return true;
                 }
             }
@@ -362,7 +354,7 @@ namespace anim {
         }
         void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
             for (auto animator = animators.rbegin(); animator != animators.rend(); ++animator) {
-                if (!animator->done && animator->data.animation == animation) {
+                if (!animator->done && animator->animation == animation) {
                     LOG("Attribute::ApplyOptions "<<animation<<" "<<weight)
                     animator->AddOptions(weight);
                     return;
@@ -371,15 +363,15 @@ namespace anim {
         }
         void StopIn(const animation_id& animation, float dt) noexcept {
             for (auto& animator : animators) {
-                if (!animator.done && animator.data.animation == animation) {
+                if (!animator.done && animator.animation == animation) {
                     animator.StopIn(dt);
                 }
             }
         }
         auto ForAnimations(const std::unordered_set<animation_id>& animations) {
-            auto found = std::vector<DataAnimator<AttributeAnimator>*>();
+            auto found = std::vector<AttributeAnimator*>();
             for (auto& animator : animators) {
-                if (!animator.done && animations.find(animator.data.animation) != animations.end()) {
+                if (!animator.done && animations.find(animator.animation) != animations.end()) {
                     found.push_back(&animator);
                 }
             }
@@ -389,7 +381,7 @@ namespace anim {
         friend std::ostream& operator<<(std::ostream& os, const Attribute& a) {
             for (auto& anim : a.animators) {
                 if (anim.IsEffective()) {
-                    os << anim.data.animation << "(scale=" << anim.scale << ", time=" << anim.time << ") ";
+                    os << anim.animation << "(scale=" << anim.scale << ", time=" << anim.time << ") ";
                 }
             }
             // for (auto& anim : a.animators) {
@@ -419,7 +411,8 @@ namespace anim {
                         existing = GetAttribute(animAttr.attribute);
                     }
                     existing->animators.emplace_back(
-                        AttributeAnimator(anim.name, &animAttr),
+                        anim.name,
+                        &animAttr,
                         resolvedOptions
                     );
                 }
