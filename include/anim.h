@@ -390,12 +390,12 @@ namespace anim {
             }
             return false;
         }
-        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& effect) {
             for (auto animator = animators.rbegin(); animator != animators.rend(); ++animator) {
                 if (!animator->done && animator->animation == animation) {
-                    LOG(debug, "Attribute::ApplyOptions "<<animation<<" "<<weight)
+                    LOG(debug, "Attribute::ApplyOptions "<<animation<<" "<<effect)
 
-                    animator->AddOptions(weight);
+                    animator->AddOptions(effect);
                     return;
                 }
             }
@@ -524,9 +524,9 @@ namespace anim {
                 }
             }
         }
-        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& effect) {
             for (auto& attr : set) {
-                attr.second.ApplyOptions(animation, weight);
+                attr.second.ApplyOptions(animation, effect);
             }
         }
         void StopIn(const animation_id& animation, float dt) {
@@ -555,8 +555,8 @@ namespace anim {
 
             attributes.Transition(transitionAttributes, options, outro);
         }
-        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
-            attributes.ApplyOptions(animation, weight);
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& effect) {
+            attributes.ApplyOptions(animation, effect);
         }
         void Update(float dt) {
             attributes.Update(dt, values);
@@ -632,8 +632,8 @@ namespace anim {
         if (!state.HasSub()) {
             auto def = state.GetDefinition();
             auto& animation = def->GetData();
-            auto weight = state.GetWeight();
-            auto animationOptions = def->GetOptions().animation.Join(transitionOptions.animation).Join(weight);
+            auto effect = state.GetEffect();
+            auto animationOptions = def->GetOptions().animation.Join(transitionOptions.animation).Join(effect);
             
             transitionRequests.emplace_back(animation, animationOptions);
         }
@@ -658,7 +658,7 @@ namespace anim {
         float totalEffectiveScale = 0.0f;
         for (auto state : active) {
             state->Iterate([&totalEffectiveScale, &subject](const State& state) -> bool {
-                float scale = state.GetWeight().scale.Get(1.0f);
+                float scale = state.GetEffect().scale.Get(1.0f);
                 if (scale > subject.minEffectiveScale) {
                     totalEffectiveScale += scale;
                 }
@@ -666,7 +666,7 @@ namespace anim {
             });
         }
 
-        // This is preferential, this will allow a total weight < 1. Remove it to make sure total weight across all animations is 1.0.
+        // This is preferential, this will allow a total effect < 1. Remove it to make sure total effect across all animations is 1.0.
         float scaleModifier = 1.0f;
         if (totalEffectiveScale == 0.0f) {
             // do nothing, we don't have anything to apply
@@ -676,19 +676,19 @@ namespace anim {
             scaleModifier = subject.maxTotalScale / totalEffectiveScale;
         }
 
-        // Apply normalized weight
+        // Apply normalized effect
         for (auto state : active) {
             state->Iterate([scaleModifier, &subject, &update](const State& state) -> bool {
                 auto& animation = state.GetDefinition()->GetData().name;
-                auto weight = state.GetWeight();
-                float scale = weight.scale.Get(1.0f);
+                auto effect = state.GetEffect();
+                float scale = effect.scale.Get(1.0f);
 
                 if (scale <= subject.minEffectiveScale) {
                     scale = 0;   
                 }
 
-                weight.scale = scale * scaleModifier;
-                subject.ApplyOptions(animation, weight);
+                effect.scale = scale * scaleModifier;
+                subject.ApplyOptions(animation, effect);
                 return true;
             });
         }

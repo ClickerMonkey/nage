@@ -2,7 +2,7 @@
 
 #include "../include/anim.h"
 
-// Inputs that can drive the weight and condition functions.
+// Inputs that can drive the effect and condition functions.
 struct Input {
     static const inline state::UserStateProperty<bool>  Jump = 0;
     static const inline state::UserStateProperty<bool>  OnGround = 1; 
@@ -65,24 +65,24 @@ T Max(T a, T b) {
     return a >= b ? a : b;
 }
 
-// Weight functions
-anim::AnimationOptions IdleWeight(const state::UserState& i, const state::UserState& u) { 
+// Effect functions
+anim::AnimationOptions IdleEffect(const state::UserState& i, const state::UserState& u) { 
     auto speed = 1.0f-Max(Abs(i.Get(Input::ForwardSpeed)), Abs(i.Get(Input::SideSpeed)));
     return anim::AnimationOptions{ .scale = speed };
 }
-anim::AnimationOptions ForwardWeight(const state::UserState& i, const state::UserState& u) { 
+anim::AnimationOptions ForwardEffect(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::ForwardSpeed) > 0 ? i.Get(Input::ForwardSpeed) : 0;
     return anim::AnimationOptions{ .scale = speed };
 }
-anim::AnimationOptions BackwardWeight(const state::UserState& i, const state::UserState& u) { 
+anim::AnimationOptions BackwardEffect(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::ForwardSpeed) < 0 ? -i.Get(Input::ForwardSpeed) : 0;
     return anim::AnimationOptions{ .scale = speed };
 }
-anim::AnimationOptions RightWeight(const state::UserState& i, const state::UserState& u) { 
+anim::AnimationOptions RightEffect(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::SideSpeed) > 0 ? i.Get(Input::SideSpeed) : 0;
     return anim::AnimationOptions{ .scale = speed };
 }
-anim::AnimationOptions LeftWeight(const state::UserState& i, const state::UserState& u) { 
+anim::AnimationOptions LeftEffect(const state::UserState& i, const state::UserState& u) { 
     auto speed = i.Get(Input::SideSpeed) < 0 ? -i.Get(Input::SideSpeed) : 0;
     return anim::AnimationOptions{ .scale = speed };
 }
@@ -114,19 +114,19 @@ int main() {
 
     // All states are constantly active and blended together based on speed & direction.
     auto grounded = anim::NewSubDefinition(anim::MachineOptions{.FullyActive = true});
-    grounded.AddState(anim::StateDefinition("idle", Load("idle", 0), IdleWeight, true));
-    grounded.AddState(anim::StateDefinition("forward", Load("forward", 1), ForwardWeight, true));
-    grounded.AddState(anim::StateDefinition("backward", Load("backward", 2), BackwardWeight, true));
-    grounded.AddState(anim::StateDefinition("left", Load("strafeLeft", 3), LeftWeight, true));
-    grounded.AddState(anim::StateDefinition("right", Load("strafeRight", 4), RightWeight, true));
+    grounded.AddState(anim::StateDefinition("idle", Load("idle", 0), IdleEffect, true));
+    grounded.AddState(anim::StateDefinition("forward", Load("forward", 1), ForwardEffect, true));
+    grounded.AddState(anim::StateDefinition("backward", Load("backward", 2), BackwardEffect, true));
+    grounded.AddState(anim::StateDefinition("left", Load("strafeLeft", 3), LeftEffect, true));
+    grounded.AddState(anim::StateDefinition("right", Load("strafeRight", 4), RightEffect, true));
 
     // All states are constantly active and blended together based on speed & direction.
     auto ledge = anim::NewSubDefinition(anim::MachineOptions{.FullyActive = true});
-    ledge.AddState(anim::StateDefinition("idle", Load("ledgeIdle", 5), IdleWeight, true));
-    ledge.AddState(anim::StateDefinition("forward", Load("ledgeUp", 6), ForwardWeight, true));
-    ledge.AddState(anim::StateDefinition("backward", Load("ledgeDown", 7), BackwardWeight, true));
-    ledge.AddState(anim::StateDefinition("left", Load("ledgeLeft", 8), LeftWeight, true));
-    ledge.AddState(anim::StateDefinition("right", Load("ledgeRight", 9), RightWeight, true));
+    ledge.AddState(anim::StateDefinition("idle", Load("ledgeIdle", 5), IdleEffect, true));
+    ledge.AddState(anim::StateDefinition("forward", Load("ledgeUp", 6), ForwardEffect, true));
+    ledge.AddState(anim::StateDefinition("backward", Load("ledgeDown", 7), BackwardEffect, true));
+    ledge.AddState(anim::StateDefinition("left", Load("ledgeLeft", 8), LeftEffect, true));
+    ledge.AddState(anim::StateDefinition("right", Load("ledgeRight", 9), RightEffect, true));
 
     auto One = anim::AnimationOptions{ .scale = 1.0f };
 

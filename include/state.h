@@ -40,6 +40,7 @@ namespace state {
 
     // TODO
     // - Add machine registry & id so you don't have to deal with references to machine instances or machines?
+    // - TODO rename effect to something better? Effect?
 
     // A definition for a state a machine can be in.
     template<typename T>
@@ -63,17 +64,17 @@ namespace state {
     class MachineDefinition;
 
     // When you define a state machine you define a traits class
-    template<typename ID, typename Subject, typename Data, typename Input, typename Options, typename UpdateState, typename Weight>
+    template<typename ID, typename Subject, typename Data, typename Input, typename Options, typename UpdateState, typename Effect>
     struct Types {
         // Core types
-        using this_type = Types<ID, Subject, Data, Input, Options, UpdateState, Weight>;
+        using this_type = Types<ID, Subject, Data, Input, Options, UpdateState, Effect>;
         using id_type = ID;
         using subject_type = Subject;
         using data_type = Data;
         using input_type = Input;
         using option_type = Options;
         using update_type = UpdateState;
-        using weight_type = Weight;
+        using effect_type = Effect;
 
         // Given input and metadata, should something happen?
         // This will be called for live transitions every update
@@ -82,8 +83,8 @@ namespace state {
         using condition_type = std::function<bool(const input_type&, const update_type&)>;
 
         // Given input and metadata, how much sould a state weigh for fuzzy machines? 
-        // For finite machines with multiple states to choose from, the greatest weight is chosen.
-        using get_weight_type = std::function<weight_type(const input_type&, const update_type&)>;
+        // For finite machines with multiple states to choose from, the greatest effect is chosen.
+        using get_effect_type = std::function<effect_type(const input_type&, const update_type&)>;
 
         // Given a subject and state, is the state done?
         // Once all states are done all transitions without a start are evaluated to see what to do next.
@@ -93,8 +94,8 @@ namespace state {
         // The state has been started, do what's needed to the subject.
         using start_type = std::function<bool(subject_type&, const Active<this_type>&, const Transition<this_type>&, const Active<this_type>* outro)>;
 
-        // Apply the active states to the subject. The passed states may have weights that add up to any number, it's up
-        // to the implementation to adjust the weights before using them (ex: normalize them).
+        // Apply the active states to the subject. The passed states may have effects that add up to any number, it's up
+        // to the implementation to adjust the effects before using them (ex: normalize them).
         using apply_type = std::function<void(subject_type&, const std::vector<Active<this_type>*>&, const update_type&)>;
 
         // A function for sorting states. Return true if a should be sorted before b.
@@ -196,42 +197,42 @@ namespace state {
         using option_t     = typename T::option_type;
         using input_t      = typename T::input_type;
         using update_t     = typename T::update_type;
-        using get_weight_t = typename T::get_weight_type;
-        using weight_t     = typename T::weight_type;
+        using get_effect_t = typename T::get_effect_type;
+        using effect_t     = typename T::effect_type;
         using data_t       = typename T::data_type;
     public:
 
-        // A state with no weight calculation.
-        Definition(id_t id, data_t data, weight_t fixedWeight): 
-            m_id(id), m_data(std::move(data)), m_fixedWeight(fixedWeight), m_weight(), m_weightLive(false), m_options(), m_sub(nullptr), m_transitions() {}
-        // A state with no weight calculation but with options.
-        Definition(id_t id, data_t data, weight_t fixedWeight, option_t options): 
-            m_id(id), m_data(std::move(data)), m_fixedWeight(fixedWeight), m_options(std::move(options)), m_weight(), m_weightLive(false), m_sub(nullptr), m_transitions() {}
-        // A state with a weight calculation.
-        Definition(id_t id, data_t data, get_weight_t weight, bool weightLive): 
-            m_id(id), m_data(std::move(data)), m_fixedWeight(), m_weight(std::move(weight)), m_weightLive(weightLive), m_options(), m_sub(nullptr), m_transitions() {}
-        // A state with a weight calculation and options.
-        Definition(id_t id, data_t data, get_weight_t weight, bool weightLive, option_t options): 
-            m_id(id), m_data(std::move(data)), m_fixedWeight(), m_weight(std::move(weight)), m_weightLive(weightLive), m_options(std::move(options)), m_sub(nullptr), m_transitions() {}
+        // A state with no effect calculation.
+        Definition(id_t id, data_t data, effect_t fixedEffect): 
+            m_id(id), m_data(std::move(data)), m_fixedEffect(fixedEffect), m_effect(), m_effectLive(false), m_options(), m_sub(nullptr), m_transitions() {}
+        // A state with no effect calculation but with options.
+        Definition(id_t id, data_t data, effect_t fixedEffect, option_t options): 
+            m_id(id), m_data(std::move(data)), m_fixedEffect(fixedEffect), m_options(std::move(options)), m_effect(), m_effectLive(false), m_sub(nullptr), m_transitions() {}
+        // A state with a effect calculation.
+        Definition(id_t id, data_t data, get_effect_t effect, bool effectLive): 
+            m_id(id), m_data(std::move(data)), m_fixedEffect(), m_effect(std::move(effect)), m_effectLive(effectLive), m_options(), m_sub(nullptr), m_transitions() {}
+        // A state with a effect calculation and options.
+        Definition(id_t id, data_t data, get_effect_t effect, bool effectLive, option_t options): 
+            m_id(id), m_data(std::move(data)), m_fixedEffect(), m_effect(std::move(effect)), m_effectLive(effectLive), m_options(std::move(options)), m_sub(nullptr), m_transitions() {}
         // A state that actually has a sub machine.
         Definition(id_t id, const MachineDefinition<T> sub): 
-            m_id(id), m_sub(std::make_shared<MachineDefinition<T>>(sub)), m_data(), m_fixedWeight(), m_weight(), m_weightLive(false), m_options(), m_transitions() {}
+            m_id(id), m_sub(std::make_shared<MachineDefinition<T>>(sub)), m_data(), m_fixedEffect(), m_effect(), m_effectLive(false), m_options(), m_transitions() {}
         // A state that actually has a sub machine with options.
         Definition(id_t id, const MachineDefinition<T> sub, option_t options): 
-            m_id(id), m_sub(std::make_shared<MachineDefinition<T>>(sub)), m_options(std::move(options)), m_data(), m_fixedWeight(), m_weight(), m_weightLive(false), m_transitions() {}
+            m_id(id), m_sub(std::make_shared<MachineDefinition<T>>(sub)), m_options(std::move(options)), m_data(), m_fixedEffect(), m_effect(), m_effectLive(false), m_transitions() {}
 
         // The id of the state definition.
         constexpr auto GetID() const noexcept { return m_id; }
         // The data associated with the state.
         constexpr auto& GetData() const noexcept { return m_data; }
-        // Computes the weight for a state given the input & update states.
-        // If a weight function is not returned, the fixed weight is used.
-        constexpr auto GetWeight(const input_t& input, const update_t& update) const { return m_weight ? m_weight(input, update) : m_fixedWeight; }
-        // Returns the fixed weight specified on the state definition. 
-        constexpr auto GetFixedWeight() const noexcept { return m_fixedWeight; };
-        // Returns whether the weight function should be evaluated each frame. If false it's only evaluated when a state
-        // instance is created. If there is no weight function it's never considered live.
-        constexpr auto IsWeightLive() const noexcept { return m_weight ? m_weightLive : false; }
+        // Computes the effect for a state given the input & update states.
+        // If a effect function is not returned, the fixed effect is used.
+        constexpr auto GetEffect(const input_t& input, const update_t& update) const { return m_effect ? m_effect(input, update) : m_fixedEffect; }
+        // Returns the fixed effect specified on the state definition. 
+        constexpr auto GetFixedEffect() const noexcept { return m_fixedEffect; };
+        // Returns whether the effect function should be evaluated each frame. If false it's only evaluated when a state
+        // instance is created. If there is no effect function it's never considered live.
+        constexpr auto IsEffectLive() const noexcept { return m_effect ? m_effectLive : false; }
         // The options provided for the state. Potentially will be removed in the future since GetData() should store enough information.
         constexpr auto& GetOptions() const noexcept { return m_options; }
         // Returns the transitions that can be made out of this state.
@@ -243,9 +244,9 @@ namespace state {
     private:
         const id_t m_id;
         const data_t m_data; // state data
-        const get_weight_t m_weight; // calculates weight
-        const weight_t m_fixedWeight; // the weight to use if a weight function is not supplied
-        const bool m_weightLive; // if the weight should be calculated each update (false = at start)
+        const get_effect_t m_effect; // calculates effect
+        const effect_t m_fixedEffect; // the effect to use if a effect function is not supplied
+        const bool m_effectLive; // if the effect should be calculated each update (false = at start)
         const option_t m_options;
         std::vector<Transition<T>> m_transitions; // transitions out of this state
         const std::shared_ptr<MachineDefinition<T>> m_sub; // a sub machine
@@ -439,39 +440,39 @@ namespace state {
         using subject_t   = typename T::subject_type;
         using input_t     = typename T::input_type;
         using update_t    = typename T::update_type;
-        using weight_t    = typename T::weight_type;
+        using effect_t    = typename T::effect_type;
         using done_t      = typename T::done_type;
     public:
 
         // Default constructor
         Active() = default;
-        // An active state with the given definition, subject, current state of input & update (used to calculate current weight), and the parent machine.
+        // An active state with the given definition, subject, current state of input & update (used to calculate current effect), and the parent machine.
         Active(const Definition<T>* def, subject_t& subject, const input_t& input, const update_t& update, Machine<T>* parent):
             m_def(def),
-            m_weight(def->GetWeight(input, update)),
+            m_effect(def->GetEffect(input, update)),
             m_sub(def->GetSub() ? std::make_unique<Machine<T>>(def->GetSub(), subject, parent) : nullptr) 
         {}
 
         // The definition of this state instance.
         constexpr const auto GetDefinition() const noexcept { return m_def; }
-        // The current weight of this state. 
-        constexpr auto GetWeight() const noexcept { return m_weight; }
+        // The current effect of this state. 
+        constexpr auto GetEffect() const noexcept { return m_effect; }
         // Returns whether this state has a sub-machine instance.
         constexpr auto HasSub() const noexcept { return !!m_sub; }
         // Returns the sub-machine instance (if any).
         constexpr auto& GetSub() const noexcept { return m_sub; }
         // Updates this state. If this has a sub-machine, that's updated. Otherwise if the state
-        // has live weight - that's updated.
+        // has live effect - that's updated.
         void Update(const input_t& input, const update_t& update) {
             if (m_sub) {
                 LOG(debug, "Active::Update sub "<<m_def->GetData().name)
 
                 m_sub->Update(update);
             } else {
-                if (m_def->IsWeightLive()) {
-                    m_weight = m_def->GetWeight(input, update);
+                if (m_def->IsEffectLive()) {
+                    m_effect = m_def->GetEffect(input, update);
 
-                    LOG(debug, "Active::Update weight "<<m_def->GetData().name<<": "<<m_weight)
+                    LOG(debug, "Active::Update effect "<<m_def->GetData().name<<": "<<m_effect)
                 }
             }
         }
@@ -512,7 +513,7 @@ namespace state {
 
     private:
         const Definition<T>* m_def;
-        weight_t m_weight;
+        effect_t m_effect;
         std::unique_ptr<Machine<T>> m_sub;
     };
     
