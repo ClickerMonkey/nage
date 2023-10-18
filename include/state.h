@@ -40,7 +40,6 @@ namespace state {
 
     // TODO
     // - Add machine registry & id so you don't have to deal with references to machine instances or machines?
-    // - Finish documentation
 
     // A definition for a state a machine can be in.
     template<typename T>
@@ -107,6 +106,7 @@ namespace state {
     constexpr auto And(condition_type a){
         return a;
     }
+    // Produces a condition that's only true when all conditions are true
     template<typename condition_type, typename ...condition_types>
     constexpr auto And(condition_type a, condition_types... b){
         return [a, remain = And(b...)](auto value){ return a(value) && remain(value);};
@@ -117,6 +117,7 @@ namespace state {
     constexpr auto Or(condition_type a){
         return a;
     }
+    // Produces a condition that's true when any condition is true
     template<typename condition_type, typename ...condition_types>
     constexpr auto Or(condition_type a, condition_types... b){
         return [a, remain = Or(b...)](auto value){ return a(value) || remain(value);};
@@ -127,6 +128,7 @@ namespace state {
     constexpr auto Not(condition_type a){
         return a;
     }
+    // Produces a condition that's true when all conditions are false
     template<typename condition_type, typename ...condition_types>
     constexpr auto Not(condition_type a, condition_types... b){
         return [a, remain = Not(b...)](auto value){ return !(a(value) || remain(value));};
@@ -161,17 +163,26 @@ namespace state {
         Transition(id_t start, id_t end, bool waitForDone):
             m_hasStart(true), m_start(std::move(start)), m_end(std::move(end)), m_condition(), m_live(!waitForDone), m_options() {}
 
+        // Returns if the transition has a start. A transition without a start is considered a global transition and is stored on the machine definition
+        // instead of the state definition. It's evaluated no matter what the current state is.
         constexpr auto HasStart() const noexcept { return m_hasStart; }
+        // The id of the starting state (if any).
         constexpr auto GetStart() const noexcept { return m_start; }
+        // The id of the ending state.
         constexpr auto GetEnd() const noexcept { return m_end; }
+        // The condition on the transition. This is optional, and when not given it's considered to always return true.
         constexpr auto GetCondition() const noexcept { return m_condition; }
+        // The options specified on the transition, to be passed to the start function.
         constexpr const auto& GetOptions() const noexcept { return m_options; }
+        // Returns whether this transition is live. A live transition is checked each machine update. A non-live transition
+        // is only checked if the starting state of the transition is done (as defined by the done function).
         constexpr auto IsLive() const noexcept { return m_live; }
+        // Evalutes the input and update and returns whether this transition should be done.
         constexpr auto Eval(const input_t& input, const update_t& update) const { return !m_condition || m_condition(input, update); }
 
     private:
         const bool m_hasStart;
-        const id_t m_start; // -1, any state
+        const id_t m_start; // optional
         const id_t m_end; // end state
         const condition_t m_condition; // transition to end?
         const bool m_live; // actively check each update (false=only when start/any state finishes)
@@ -209,13 +220,23 @@ namespace state {
         Definition(id_t id, const MachineDefinition<T> sub, option_t options): 
             m_id(id), m_sub(std::make_shared<MachineDefinition<T>>(sub)), m_options(std::move(options)), m_data(), m_fixedWeight(), m_weight(), m_weightLive(false), m_transitions() {}
 
+        // The id of the state definition.
         constexpr auto GetID() const noexcept { return m_id; }
+        // The data associated with the state.
         constexpr auto& GetData() const noexcept { return m_data; }
+        // Computes the weight for a state given the input & update states.
+        // If a weight function is not returned, the fixed weight is used.
         constexpr auto GetWeight(const input_t& input, const update_t& update) const { return m_weight ? m_weight(input, update) : m_fixedWeight; }
+        // Returns the fixed weight specified on the state definition. 
         constexpr auto GetFixedWeight() const noexcept { return m_fixedWeight; };
+        // Returns whether the weight function should be evaluated each frame. If false it's only evaluated when a state
+        // instance is created. If there is no weight function it's never considered live.
         constexpr auto IsWeightLive() const noexcept { return m_weight ? m_weightLive : false; }
+        // The options provided for the state. Potentially will be removed in the future since GetData() should store enough information.
         constexpr auto& GetOptions() const noexcept { return m_options; }
+        // Returns the transitions that can be made out of this state.
         constexpr auto& GetTransitions() const noexcept { return m_transitions; }
+        // Returns the sub-machine definition on this state or nullptr if none exists.
         constexpr const MachineDefinition<T>* GetSub() const noexcept { return m_sub.get(); }
 
         friend class MachineDefinition<T>;
@@ -223,7 +244,7 @@ namespace state {
         const id_t m_id;
         const data_t m_data; // state data
         const get_weight_t m_weight; // calculates weight
-        const weight_t m_fixedWeight;
+        const weight_t m_fixedWeight; // the weight to use if a weight function is not supplied
         const bool m_weightLive; // if the weight should be calculated each update (false = at start)
         const option_t m_options;
         std::vector<Transition<T>> m_transitions; // transitions out of this state
@@ -285,17 +306,29 @@ namespace state {
         MachineDefinition(start_t start, apply_t apply, done_t done, input_t initialInput, MachineOptions<T> options):
             m_start(std::move(start)), m_apply(std::move(apply)), m_done(std::move(done)), m_initialInput(std::move(initialInput)), m_options(std::move(options)), m_transitions() {}
         
+        // The initial input of a machine when one is created with this definition.
         constexpr auto GetInitialInput() const noexcept { return m_initialInput; }
+        // Returns whether the subject and given active state is "done". A done state is removed from the active list
+        // of states and its non-live transitions are checked.
         constexpr auto IsDone(const subject_t& subject, const Active<T>& state) const noexcept { return m_done(subject, state); }
+        // Starts subject, active state, the transition that triggered the start (if applicable), and the active state we might
+        // be transitioning out of.
         constexpr auto Start(subject_t& subject, const Active<T>& state, const Transition<T>& trans, const Active<T>* outro) const noexcept { return m_start ? m_start(subject, state, trans, outro) : true; }
+        // Applies the results of the state machine to the given subject. It's provided a list of the active states
+        // and the update state.
         constexpr void Apply(subject_t& subject, const std::vector<Active<T>*>& active, const update_t& update) const noexcept { if (m_apply) m_apply(subject, active, update); }
+        // The options for this machine definition.
         constexpr auto& GetOptions() const noexcept { return m_options; }
+        // The states added to the machine definition.
         constexpr auto& GetStates() const noexcept { return m_states; }
+        // The global transitions (without a specific start) on the machine definition.
         constexpr auto& GetTransitions() const noexcept { return m_transitions; }
+        // Adds a state to the definition.
         constexpr void AddState(Definition<T> state) {
             m_states.push_back(std::move(state));
         }
-        Definition<T>* GetState(id_t id) {
+        // Returns the state with the given identifier.
+        Definition<T>* GetState(const id_t id) {
             for (auto& s : m_states) {
                 if (s.GetID() == id) {
                     return &s;
@@ -303,7 +336,8 @@ namespace state {
             }
             return nullptr;
         }
-        const Definition<T>* GetState(id_t id) const {
+        // Returns a const state definition with the given identifier.
+        const Definition<T>* GetState(const id_t id) const {
             for (auto& s : m_states) {
                 if (s.GetID() == id) {
                     return &s;
@@ -311,10 +345,18 @@ namespace state {
             }
             return nullptr;
         }
+        // Adds a transition to the machine definition. If the end or start state defined on the transition does not
+        // exist yet in the machine definition an exception is thrown.
         void AddTransition(Transition<T> trans) {
-            GetState(trans.GetEnd());
+            if (GetState(trans.GetEnd()) == nullptr) {
+                throw std::invalid_argument("end state of transition was not defined on the machine");
+            } 
             if (trans.HasStart()) {
-                GetState(trans.GetStart())->m_transitions.push_back(std::move(trans));
+                auto start = GetState(trans.GetStart());
+                if (start == nullptr) {
+                    throw std::invalid_argument("start state of transition was not defined on the machine");
+                }
+                start->m_transitions.push_back(std::move(trans));
             } else {
                 m_transitions.push_back(std::move(trans));
             }
@@ -350,21 +392,36 @@ namespace state {
             m_activeQueue()
         {}
 
+        // Returns the parent machine instance (if this is not the root machine).
         constexpr const auto GetParent() const noexcept { return m_parent; }
+        // Returns the definition of this machine instance.
         constexpr const auto GetDefinition() const noexcept { return m_def; }
+        // Returns the subject of this machine.
         constexpr auto& GetSubject() noexcept { return m_subject; }
+        // Returns the current input of this machine. Manipulate this variable to affect the state.
         constexpr auto& GetInput() noexcept { return m_input; }
+        // Returns a list of the current active states.
         constexpr const auto& GetActive() const noexcept { return m_active; }
+        // Returns a list of the states in a queue to be potentially activated during the next Update call.
         constexpr const auto& GetActiveQueue() const noexcept { return m_activeQueue; }
+        // Returns a list of the states that were considered applicable to be applied during the last Apply call.
         constexpr const auto& GetApplicable() const noexcept { return m_applicable; }
+        // Returns an active state with the given identifier or null if one doesn't exist.
         Active<T>* GetActive(const id_t id);
-        int Transitions(const std::vector<Transition<T>>& transitions, const update_t& update, const bool onlyLive, std::vector<Active<T>>& out, const Active<T>* outro);
+        // Evaluates the given list of transitions and adds any states that should be transitioned to
+        // to the active queue. 
+        int Transitions(const std::vector<Transition<T>>& transitions, const update_t& update, const bool onlyLive, const Active<T>* outro);
+        // Initializes the machine if there are no active or queued states.
         void Init(const update_t& update);
+        // Updates the machine with the given update state.
         void Update(const update_t& update);
+        // Applies the applicable states to the subject with the given update state.
         void Apply(const update_t& update);
 
     private: 
-        void UpdateActive(const update_t& update, int startAt = 0);
+        // Updates all active states.
+        void UpdateActive(const update_t& update);
+        // Processes the queue of potential active states.
         void ProcessQueue(const update_t& update);
 
         const Machine<T>* m_parent;
@@ -395,10 +452,16 @@ namespace state {
             m_sub(def->GetSub() ? std::make_unique<Machine<T>>(def->GetSub(), subject, parent) : nullptr) 
         {}
 
+        // The definition of this state instance.
         constexpr const auto GetDefinition() const noexcept { return m_def; }
+        // The current weight of this state. 
         constexpr auto GetWeight() const noexcept { return m_weight; }
+        // Returns whether this state has a sub-machine instance.
         constexpr auto HasSub() const noexcept { return !!m_sub; }
+        // Returns the sub-machine instance (if any).
         constexpr auto& GetSub() const noexcept { return m_sub; }
+        // Updates this state. If this has a sub-machine, that's updated. Otherwise if the state
+        // has live weight - that's updated.
         void Update(const input_t& input, const update_t& update) {
             if (m_sub) {
                 LOG(debug, "Active::Update sub "<<m_def->GetData().name)
@@ -412,6 +475,9 @@ namespace state {
                 }
             }
         }
+        // Iterates through all bottom states connected to this state. A bottom state is
+        // one that does not have a sub-machine. This will traverse through all sub machines
+        // and return the active states.
         bool Iterate(std::function<bool(const Active<T>&)> fn) const {
              if (HasSub()) {
                 for (auto& sub : GetSub()->GetActive()) {
@@ -424,13 +490,24 @@ namespace state {
                 return fn(*this);
             }
         }
+        // Returns whether this state appears done. If this state has a sub-machine in order
+        // for it to be considered done there should be no states in queue and all sub-states
+        // also need to be considered "not done".
         bool IsDone(const subject_t& subject, const MachineDefinition<T>* def) const {
-            if (HasSub() && GetSub()->GetActiveQueue().size() > 0) {
-                return false;
+            auto& sub = GetSub();
+            if (sub) {
+                if (sub->GetActiveQueue().size() > 0) {
+                    return false;
+                }
+                for (auto& subState : sub->GetActive()) {
+                    if (!subState.IsDone(subject, def)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else {
+                return def->IsDone(subject, *this);
             }
-            return !Iterate([&subject, def](const Active<T>& state) -> bool {
-                return !def->IsDone(subject, state);
-            });
         }
 
     private:
@@ -439,9 +516,8 @@ namespace state {
         std::unique_ptr<Machine<T>> m_sub;
     };
     
-    // Machine
     template<typename T>
-    int Machine<T>::Transitions(const std::vector<Transition<T>>& transitions, const update_t& update, const bool onlyLive, std::vector<Active<T>>& out, const Active<T>* outro) {
+    int Machine<T>::Transitions(const std::vector<Transition<T>>& transitions, const update_t& update, const bool onlyLive, const Active<T>* outro) {
         auto transitioned = 0;
         for (auto& trans : transitions) {
             if (onlyLive && !trans.IsLive()) {
@@ -468,7 +544,7 @@ namespace state {
                 if (m_def->Start(m_subject, state, trans, outro)) {
                     LOG(info, "Machine::Transitions started "<<stateDef->GetID())
 
-                    out.push_back(std::move(state));
+                    m_activeQueue.push_back(std::move(state));
                     transitioned++;
                 }
             }
@@ -523,7 +599,7 @@ namespace state {
         } else if (!transitions.empty()) {
             LOG(info, "Machine::Init using global transitions")
 
-            Transitions(transitions, update, false, m_activeQueue, nullptr);
+            Transitions(transitions, update, false, nullptr);
         }
     }
 
@@ -571,12 +647,12 @@ namespace state {
     }
 
     template<typename T>
-    void Machine<T>::UpdateActive(const update_t& update, int startAt) {
+    void Machine<T>::UpdateActive(const update_t& update) {
         // Machine options
         auto& options = m_def->GetOptions();
 
         // Start here
-        auto state = m_active.begin() + startAt;
+        auto state = m_active.begin();
 
         // If all states are always active, no need to do done or transition logic.
         if (options.FullyActive) {
@@ -594,7 +670,8 @@ namespace state {
                     LOG(info, "Machine::Update "<<state->GetDefinition()->GetID()<<" done due to IsDone")
                 }
 
-                auto transitioned = Transitions(state->GetDefinition()->GetTransitions(), update, !done, m_activeQueue, &(*state));
+                auto transitioned = Transitions(state->GetDefinition()->GetTransitions(), update, !done, &(*state));
+
                 if (transitioned > 0 && !done) {
                     LOG(info, "Machine::Update "<<state->GetDefinition()->GetID()<<" done due to transition")
 
@@ -621,7 +698,7 @@ namespace state {
             auto hasState = m_active.size() > 0 || m_activeQueue.size() > 0;
 
             // Global transitions or initial transitions if there are no states.
-            Transitions(m_def->GetTransitions(), update, hasState, m_activeQueue, nullptr);
+            Transitions(m_def->GetTransitions(), update, hasState, nullptr);
         }
 
         // Process queue into active
@@ -669,7 +746,7 @@ namespace state {
         }
         
         LOG(debug, "Machine::Applying "<<m_applicable.size()<<" out of "<<m_active.size()<<" active states")
-        
+
         m_def->Apply(m_subject, m_applicable, update);
     }
 
