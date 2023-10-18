@@ -160,8 +160,9 @@ namespace anim {
         Param<float> duration; // how longs animation lasts
         Param<float> sleep; // sleeps between animating
         Param<int> repeat; // repeat how many times? (-1=forever)
-        Param<float> offset; // seconds to start in the animation data, excluding everything before this
         Param<float> scale; // how much to scale the animation relative to its default/resting value.
+        Param<float> clipStart; // seconds to start in the animation data, excluding everything before this
+        Param<float> clipEnd; // seconds to end in the animation data, excluding everything before this
         Path path; // convert animation data into a single point given a time (0->1)
         Easing easing; // animation velocity function
 
@@ -171,11 +172,17 @@ namespace anim {
             o.duration = duration.Join(0, next.duration);
             o.sleep = sleep.Join(0, next.sleep);
             o.repeat = repeat.Join(1, next.repeat);
-            o.offset = offset.Join(0, next.offset);
-            o.scale = offset.Join(1, next.scale);
+            o.clipStart = clipStart.Join(0, next.clipStart);
+            o.clipEnd = clipEnd.Join(1, next.clipEnd);
+            o.scale = scale.Join(1, next.scale);
             o.path = next.path ? next.path : path;
             o.easing = JoinEasing(easing, next.easing);
             return o;
+        }
+        
+        friend std::ostream& operator<<(std::ostream& os, const AnimationOptions& a) {
+            os << a.scale.Get(1.0f);
+            return os;
         }
     };
     struct TransitionOptions{ 
@@ -218,8 +225,9 @@ namespace anim {
         float sleep; // sleeps between animating
         int repeat; // repeat how many times? (-1=forever)
         float offset; // seconds to start in the animation data, excluding everything before this
-        float scale; // how much to scale the animation relative to its default/resting value.
-        float weight; // a weight returned by a state machine
+        float clipStart;  // seconds to start in the animation data, excluding everything before this
+        float clipEnd; // seconds to the end in the aninmation data, excluding everything after this
+        float scale; // how much to scale the animation relative to its default/resting value
         float time; // how many seconds the animation has been playing
         float stopAt; // if > 0, stop here
         bool done;
@@ -227,16 +235,10 @@ namespace anim {
         float applyDelta;
 
         DataAnimator() = default;
-        DataAnimator(const D d, const AnimationOptions opts, float w): 
+        DataAnimator(const D d, const AnimationOptions opts): 
             data(std::move(d)), options(opts)
         {
-            delay = options.delay.Get(0);
-            duration = options.duration.Get(0);
-            sleep = options.sleep.Get(0);
-            repeat = options.repeat.Get(1);
-            offset = options.offset.Get(0);
-            scale = options.scale.Get(1);
-            weight = w;
+            ApplyOptions();
             time = 0.0f;
             done = duration == 0 || repeat == 0;
             stopAt = -1;
@@ -249,9 +251,9 @@ namespace anim {
         constexpr float ActualLifetime() const noexcept { return stopAt >= 0 ? stopAt : MaxLifetime(); }
         constexpr float AnimationTime(float t) const noexcept { return fmod(IntoAnimation(t), IterationTime()); }
         constexpr float Delta(float t) const noexcept { return AnimationTime(t) / duration; }
-        constexpr float ApplyDelta(float t) const noexcept { auto d = Delta(t); return d < 0 || d > 1 ? -1 : Ease(calc::Lerp<float>(offset, 1, d), options.easing); }
-        constexpr float EffectiveScale() const noexcept { return scale * weight; }
-        constexpr bool IsEffective() const noexcept { return scale != 0 && weight != 0; }
+        constexpr float ApplyDelta(float t) const noexcept { auto d = Delta(t); return d < 0 || d > 1 ? -1 : Ease(calc::Lerp<float>(clipStart, clipEnd, d), options.easing); }
+        constexpr float EffectiveScale() const noexcept { return scale; }
+        constexpr bool IsEffective() const noexcept { return scale != 0 && clipEnd > clipStart; }
         constexpr int Iteration(float t) const noexcept { return t < delay ? -1 : floor(IntoAnimation(t) / IterationTime()); }
         constexpr bool IsStopping() const noexcept { return stopAt != -1; }
         void Update(float dt) {
@@ -269,6 +271,18 @@ namespace anim {
         }
         void StopIn(float dt) noexcept {
             stopAt = time + dt;
+        }
+        void AddOptions(const AnimationOptions& additional) {
+            options = options.Join(additional);
+        }
+        void ApplyOptions() {
+            delay = options.delay.Get(0);
+            duration = options.duration.Get(0);
+            sleep = options.sleep.Get(0);
+            repeat = options.repeat.Get(1);
+            clipStart = options.clipStart.Get(0);
+            clipEnd = options.clipEnd.Get(1);
+            scale = options.scale.Get(1);
         }
     };
 
@@ -346,11 +360,11 @@ namespace anim {
             }
             return false;
         }
-        void SetWeights(const animation_id& animation, float weight) {
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
             for (auto animator = animators.rbegin(); animator != animators.rend(); ++animator) {
                 if (!animator->done && animator->data.animation == animation) {
-                    LOG("Attribute::SetWeights "<<animation<<" "<<weight)
-                    animator->weight = weight;
+                    LOG("Attribute::ApplyOptions "<<animation<<" "<<weight)
+                    animator->AddOptions(weight);
                     return;
                 }
             }
@@ -374,8 +388,8 @@ namespace anim {
 
         friend std::ostream& operator<<(std::ostream& os, const Attribute& a) {
             for (auto& anim : a.animators) {
-                if (anim.weight > 0) {
-                    os << anim.data.animation << "(weight=" << anim.weight << ", time=" << anim.time << ") ";
+                if (anim.IsEffective()) {
+                    os << anim.data.animation << "(scale=" << anim.scale << ", time=" << anim.time << ") ";
                 }
             }
             // for (auto& anim : a.animators) {
@@ -387,7 +401,7 @@ namespace anim {
         }
     };
 
-    using AnimateRequest = std::tuple<const Animation&, AnimationOptions, float>;
+    using AnimateRequest = std::tuple<const Animation&, AnimationOptions>;
 
     struct AttributeSet {
         std::map<attribute_id, Attribute> set;
@@ -395,7 +409,7 @@ namespace anim {
         AttributeSet() = default;
         AttributeSet(const std::vector<AnimateRequest>& requests) {
             for (auto& request : requests) {
-                auto [anim, options, weight] = request;
+                auto [anim, options] = request;
                 LOG("AttributeSet::AttributeSet handling request "<<anim.name<<" with attributes: "<<anim.attributes.size())
                 for (auto& animAttr : anim.attributes) {
                     auto resolvedOptions = anim.options.Join(animAttr.options).Join(options);
@@ -406,8 +420,7 @@ namespace anim {
                     }
                     existing->animators.emplace_back(
                         AttributeAnimator(anim.name, &animAttr),
-                        resolvedOptions, 
-                        weight
+                        resolvedOptions
                     );
                 }
             }
@@ -483,9 +496,9 @@ namespace anim {
                 }
             }
         }
-        void SetWeights(const animation_id& animation, float weight) {
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
             for (auto& attr : set) {
-                attr.second.SetWeights(animation, weight);
+                attr.second.ApplyOptions(animation, weight);
             }
         }
         void StopIn(const animation_id& animation, float dt) {
@@ -503,6 +516,9 @@ namespace anim {
     struct Animator {
         AttributeSet attributes;
         std::map<attribute_id, types::Value> values;
+        float minTotalScale;
+        float maxTotalScale;
+        float minEffectiveScale;
 
         Animator() = default;
 
@@ -514,8 +530,8 @@ namespace anim {
             LOG("Animator::Transition "<<requests.size()<<" to attributes: "<<transitionAttributes.set.size())
             attributes.Transition(transitionAttributes, options, outro);
         }
-        void SetWeights(const animation_id& animation, float weight) {
-            attributes.SetWeights(animation, weight);
+        void ApplyOptions(const animation_id& animation, const AnimationOptions& weight) {
+            attributes.ApplyOptions(animation, weight);
         }
         void Update(float dt) {
             attributes.Update(dt, values);
@@ -526,15 +542,12 @@ namespace anim {
             auto options = anim::TransitionOptions{};
             Transition(requests, options, std::unordered_set<animation_id>());
         }
-        void Play(const Animation& animation, const AnimationOptions& options, float weight) {
-            Play(AnimateRequest(animation, options, weight));
-        }
         void Play(const Animation& animation, const AnimationOptions& options) {
-            Play(animation, options, 1);
+            Play(AnimateRequest(animation, options));
         }
         void Play(const Animation& animation) {
             auto options = anim::AnimationOptions{};
-            Play(animation, options, 1);
+            Play(animation, options);
         }
         void StopIn(const animation_id& animation, float dt) {
             attributes.StopIn(animation, dt);
@@ -553,14 +566,13 @@ namespace anim {
 
         friend std::ostream& operator<<(std::ostream& os, const Animator& a) {
             for (auto& attrValue : a.values) {
-                os << attrValue.first << ": (";
                 auto point = attrValue.second;
-                os << point.ToString();
+                os << attrValue.first << "{" << point.ToString() << "}";
+
                 auto attr = a.attributes.GetAttribute(attrValue.first);
                 if (attr != nullptr) {
-                    os << ": " << *attr;
+                    os << " = " << *attr;
                 }
-                os << ")" << std::endl;
             }
             return os;
         }
@@ -573,9 +585,8 @@ namespace anim {
     state::UserState NewUpdate() {
         return state::UserState(1);
     }
-    // ======================================
 
-    using StateTypes = state::Types<state_id, Animator, Animation, state::UserState, Options, state::UserState, float>;
+    using StateTypes = state::Types<state_id, Animator, Animation, state::UserState, Options, state::UserState, AnimationOptions>;
     using State = state::Active<StateTypes>;
     using StateDefinition = state::Definition<StateTypes>;
     using Machine = state::Machine<StateTypes>;
@@ -598,10 +609,10 @@ namespace anim {
         if (!state.HasSub()) {
             auto def = state.GetDefinition();
             auto& animation = def->GetData();
-            auto animationOptions = def->GetOptions().animation.Join(transitionOptions.animation);
             auto weight = state.GetWeight();
-
-            transitionRequests.emplace_back(animation, animationOptions, weight);
+            auto animationOptions = def->GetOptions().animation.Join(transitionOptions.animation).Join(weight);
+            
+            transitionRequests.emplace_back(animation, animationOptions);
         }
 
         LOG("Start "<<state.GetDefinition()->GetID()<<" requests "<<transitionRequests.size())
@@ -622,26 +633,41 @@ namespace anim {
     }
     // Apply the given active states to the subject and update it.
     void Apply(Animator& subject, const std::vector<State*>& active, const state::UserState& update) {
-        // Get total weight.
-        float totalWeight = 0.0f;
+        // Get total scale.
+        float totalEffectiveScale = 0.0f;
         for (auto state : active) {
-            state->Iterate([&totalWeight](const State& state) -> bool {
-                totalWeight += state.GetWeight();
+            state->Iterate([&totalEffectiveScale, &subject](const State& state) -> bool {
+                float scale = state.GetWeight().scale.Get(1.0f);
+                if (scale > subject.minEffectiveScale) {
+                    totalEffectiveScale += scale;
+                }
                 return true;
             });
         }
 
         // This is preferential, this will allow a total weight < 1. Remove it to make sure total weight across all animations is 1.0.
-        if (totalWeight < 1.0f) {
-            totalWeight = 1.0f;
+        float scaleModifier = 1.0f;
+        if (totalEffectiveScale == 0.0f) {
+            // do nothing, we don't have anything to apply
+        } else if (totalEffectiveScale < subject.minTotalScale) {
+            scaleModifier = subject.minTotalScale / totalEffectiveScale;
+        } else if (totalEffectiveScale > subject.maxTotalScale && subject.maxTotalScale != 0) {
+            scaleModifier = subject.maxTotalScale / totalEffectiveScale;
         }
 
-        // Apply normalized weight (if greater than 1 to allow )
+        // Apply normalized weight
         for (auto state : active) {
-            state->Iterate([totalWeight, &subject, &update](const State& state) -> bool {
+            state->Iterate([scaleModifier, &subject, &update](const State& state) -> bool {
                 auto& animation = state.GetDefinition()->GetData().name;
-                auto normalizedWeight = calc::Div<float>(state.GetWeight(), totalWeight);
-                subject.SetWeights(animation, normalizedWeight);
+                auto weight = state.GetWeight();
+                float scale = weight.scale.Get(1.0f);
+
+                if (scale <= subject.minEffectiveScale) {
+                    scale = 0;   
+                }
+
+                weight.scale = scale * scaleModifier;
+                subject.ApplyOptions(animation, weight);
                 return true;
             });
         }
@@ -655,6 +681,7 @@ namespace anim {
     // If the state is done, it's non-live transitions can be evaluated.
     bool IsDone(const Animator& subject, const State& state) {
         auto& animation = state.GetDefinition()->GetData().name;
+        
         return !subject.IsAnimating(animation);
     }
 

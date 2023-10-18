@@ -1,5 +1,6 @@
 #include "../include/anim.h"
 
+// Inputs that can drive the weight and condition functions.
 struct Input {
     static const inline state::UserStateProperty<bool>  Jump = 0;
     static const inline state::UserStateProperty<bool>  OnGround = 1; 
@@ -14,6 +15,7 @@ state::UserState NewInput() {
     return state::UserState(7);
 }
 
+// Type definitions
 auto TFloat = types::New<float>("float");
 
 void DefineTypes() {
@@ -26,6 +28,7 @@ void DefineTypes() {
     calc::Register<float>(TFloat);
 }
 
+// Loads an animation
 anim::Animation Load(const std::string& name, float dataStart = 0) {
     return anim::Animation{
         .name = name,
@@ -46,6 +49,7 @@ anim::Animation Load(const std::string& name, float dataStart = 0) {
     };
 }
 
+// Helper functions
 template<typename T>
 T Abs(T value) {
     return value < 0 ? -value : value;
@@ -59,13 +63,27 @@ T Max(T a, T b) {
     return a >= b ? a : b;
 }
 
-
 // Weight functions
-float IdleWeight(const state::UserState& i, const state::UserState& u) { return 1.0f-Max(Abs(i.Get(Input::ForwardSpeed)), Abs(i.Get(Input::SideSpeed))); }
-float ForwardWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::ForwardSpeed) > 0 ? i.Get(Input::ForwardSpeed) : 0; }
-float BackwardWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::ForwardSpeed) < 0 ? -i.Get(Input::ForwardSpeed) : 0; }
-float RightWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::SideSpeed) > 0 ? i.Get(Input::SideSpeed) : 0; }
-float LeftWeight(const state::UserState& i, const state::UserState& u) { return i.Get(Input::SideSpeed) < 0 ? -i.Get(Input::SideSpeed) : 0; }
+anim::AnimationOptions IdleWeight(const state::UserState& i, const state::UserState& u) { 
+    auto speed = 1.0f-Max(Abs(i.Get(Input::ForwardSpeed)), Abs(i.Get(Input::SideSpeed)));
+    return anim::AnimationOptions{ .scale = speed };
+}
+anim::AnimationOptions ForwardWeight(const state::UserState& i, const state::UserState& u) { 
+    auto speed = i.Get(Input::ForwardSpeed) > 0 ? i.Get(Input::ForwardSpeed) : 0;
+    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+}
+anim::AnimationOptions BackwardWeight(const state::UserState& i, const state::UserState& u) { 
+    auto speed = i.Get(Input::ForwardSpeed) < 0 ? -i.Get(Input::ForwardSpeed) : 0;
+    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+}
+anim::AnimationOptions RightWeight(const state::UserState& i, const state::UserState& u) { 
+    auto speed = i.Get(Input::SideSpeed) > 0 ? i.Get(Input::SideSpeed) : 0;
+    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+}
+anim::AnimationOptions LeftWeight(const state::UserState& i, const state::UserState& u) { 
+    auto speed = i.Get(Input::SideSpeed) < 0 ? -i.Get(Input::SideSpeed) : 0;
+    return anim::AnimationOptions{ .scale = speed, .clipEnd = speed };
+}
 // Transition conditions
 bool Jumped(const state::UserState& i, const state::UserState& u) { return i.Get(Input::Jump); }
 bool IsFalling(const state::UserState& i, const state::UserState& u) { return i.Get(Input::FallingSpeed) < 0 && !i.Get(Input::OnGround); }
@@ -108,15 +126,17 @@ int main() {
     ledge.AddState(anim::StateDefinition("left", Load("ledgeLeft", 8), LeftWeight, true));
     ledge.AddState(anim::StateDefinition("right", Load("ledgeRight", 9), RightWeight, true));
 
+    auto One = anim::AnimationOptions{ .scale = 1.0f };
+
     auto def = anim::NewDefinition(initialInput, anim::MachineOptions{.ProcessQueueImmediately = true});
     def.AddState(anim::StateDefinition("grounded", grounded));
     def.AddState(anim::StateDefinition("ledge", ledge));
-    def.AddState(anim::StateDefinition("ledgeGrab", Load("ledgeGrab", 10), 1.0f));
-    def.AddState(anim::StateDefinition("ledgeDrop", Load("ledgeGrab", 11), 1.0f, anim::Options{.animation={.scale=-1.0f}}));
-    def.AddState(anim::StateDefinition("ledgePullUp", Load("ledgePullUp", 12), 1.0f));
-    def.AddState(anim::StateDefinition("jumping", Load("jumping", 13), 1.0f));
-    def.AddState(anim::StateDefinition("falling", Load("falling", 14), 1.0f));
-    def.AddState(anim::StateDefinition("landing", Load("landing", 15), 1.0f));
+    def.AddState(anim::StateDefinition("ledgeGrab", Load("ledgeGrab", 10), One));
+    def.AddState(anim::StateDefinition("ledgeDrop", Load("ledgeGrab", 11), One, anim::Options{.animation={.scale=-1.0f}}));
+    def.AddState(anim::StateDefinition("ledgePullUp", Load("ledgePullUp", 12), One));
+    def.AddState(anim::StateDefinition("jumping", Load("jumping", 13), One));
+    def.AddState(anim::StateDefinition("falling", Load("falling", 14), One));
+    def.AddState(anim::StateDefinition("landing", Load("landing", 15), One));
 
     def.AddTransition(anim::Transition("grounded", OnGround));
     def.AddTransition(anim::Transition("falling", IsFalling));
@@ -133,6 +153,7 @@ int main() {
     
     auto animator = anim::Animator{};
     animator.Init("position", TFloat);
+    animator.minTotalScale = 1.0f;
 
     auto machine = anim::Machine(&def, animator);
     machine.Init(update);
