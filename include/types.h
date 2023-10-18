@@ -739,4 +739,50 @@ namespace types {
         std::vector<V> m_values;
     };
 
+    // Metadata storage for M.
+    template<typename M>
+    struct MetadataStorage {
+        static TypedMap<M> m_types;
+        static TypedMap<std::map<Prop::name_type, M>> m_props;
+    };
+
+    // Initialze metadata typed map.
+    template<typename M> 
+    TypedMap<M> MetadataStorage<M>::m_types = TypedMap<M>();
+    template<typename M> 
+    TypedMap<std::map<Prop::name_type, M>> MetadataStorage<M>::m_props = TypedMap<std::map<Prop::name_type, M>>();
+
+    // Gets metadata of the given metadata type for the given type.
+    template<typename M>
+    M* GetTypeMeta(const Type* type) {
+        return MetadataStorage<M>::m_types.Get(type);
+    }
+
+    // Gets metadata of the given metadata type for the given type.
+    template<typename M>
+    void SetTypeMeta(const Type* type, M meta) {
+        MetadataStorage<M>::m_types.Set(type, std::move(meta));
+    }
+
+    // Gets metadata of the given metadata type for the given type.
+    template<typename M>
+    M* GetPropMeta(const Type* type, const Prop::name_type& property) {
+        auto props = MetadataStorage<M>::m_props.Get(type);
+        if (props == nullptr) {
+            return nullptr;
+        }
+        auto m = props->find(property);
+        return m == props->end() ? nullptr : &m->second;
+    }
+
+    // Gets metadata of the given metadata type for the given type.
+    template<typename M>
+    void SetPropMeta(const Type* type, const Prop::name_type& property, M meta) {
+        auto props = MetadataStorage<M>::m_props.Get(type);
+        if (props == nullptr) {
+            MetadataStorage<M>::m_props.Set(type, std::map<Prop::name_type, M>());
+            props = MetadataStorage<M>::m_props.Get(type);
+        }
+        props->emplace(property, std::move(meta));
+    }
 }
