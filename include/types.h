@@ -40,7 +40,6 @@
 namespace types {
 
     // TODO
-    // - Add metadata to Prop & Type.
     // - Add Next to Value which returns prop or value in collection.
     // - Add deep access get & set.
     // - Add strict checking with certain things are #define'd.
