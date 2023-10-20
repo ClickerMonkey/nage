@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <random>
+#include <iomanip>
 
 #include "../include/id.h"
 
@@ -56,7 +57,7 @@ void testBasic() {
 }
 
 const int keyCount = 1024;
-const int mapRounds = 100;
+const int mapRounds = 256;
 const int accessCount = 2048;
 std::string mapKeys[keyCount];
 id::Identifier idKeys[keyCount];
@@ -77,7 +78,7 @@ void populateKeys() {
     }
 }
 
-void testMapWrite(std::string prefix) {
+auto testMapWrite(std::string prefix) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = std::map<std::string, int>();
@@ -86,10 +87,12 @@ void testMapWrite(std::string prefix) {
         }
     }
     auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    return duration;
 }
 
-void testDenseMapWrite(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
+auto testDenseMapWrite(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = id::DenseMap<int, uint16_t, uint16_t>(area);
@@ -97,11 +100,13 @@ void testDenseMapWrite(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
             m.Set(idKeys[i], 0);
         }
     }
-    auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    return duration;
 }
 
-void testMapUpdate(std::string prefix) {
+void testMapUpdate(std::string prefix, auto subtract) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = std::map<std::string, int>();
@@ -115,11 +120,12 @@ void testMapUpdate(std::string prefix) {
             }
         }
     }
-    auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
 }
 
-void testDenseMapUpdate(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
+void testDenseMapUpdate(std::string prefix, auto subtract, id::Area<id::id_t, uint16_t>* area) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = id::DenseMap<int, uint16_t, uint16_t>(area);
@@ -131,11 +137,12 @@ void testDenseMapUpdate(std::string prefix, id::Area<id::id_t, uint16_t>* area) 
             v++;
         }
     }
-    auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
 }
 
-void testMapIteration(std::string prefix) {
+void testMapIteration(std::string prefix, auto subtract) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = std::map<std::string, int>();
@@ -146,11 +153,12 @@ void testMapIteration(std::string prefix) {
             p.second++;
         }
     }
-    auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
 }
 
-void testDenseMapIteration(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
+void testDenseMapIteration(std::string prefix, auto subtract, id::Area<id::id_t, uint16_t>* area) {
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < mapRounds; i++) {
         auto m = id::DenseMap<int, uint16_t, uint16_t>(area);
@@ -161,25 +169,28 @@ void testDenseMapIteration(std::string prefix, id::Area<id::id_t, uint16_t>* are
             v++;
         }
     }
-    auto end = std::chrono::steady_clock::now();;
-    std::cout << prefix << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << " ns" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
+    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
 }
 
 int main() {
     testBasic();
     populateKeys();
 
+    std::cout << std::fixed << std::setprecision(9);
+
     auto area = id::Area<id::id_t, uint16_t>(120, keyCount);
 
-    testMapWrite("testMapWrite:      ");
-    testDenseMapWrite("testDenseMapWrite: ", nullptr);
-    testDenseMapWrite("testDenseMapWrite (with area): ", &area);
-    testMapUpdate("testMapUpdate:      ");
-    testDenseMapUpdate("testDenseMapUpdate: ", nullptr);
-    testDenseMapUpdate("testDenseMapUpdate (with area): ", &area);
-    testMapIteration("testMapIteration:      ");
-    testDenseMapIteration("testDenseMapIteration: ", nullptr);
-    testDenseMapIteration("testDenseMapIteration (with area): ", &area);
+    auto mapWriteOnly =  testMapWrite(           "testMapWrite:                      ");
+    auto keyWriteOnly =  testDenseMapWrite(      "testDenseMapWrite:                 ", nullptr);
+    auto areaWriteOnly = testDenseMapWrite(      "testDenseMapWrite (with area):     ", &area);
+    testMapUpdate(          "testMapUpdate:                     ", mapWriteOnly );
+    testDenseMapUpdate(     "testDenseMapUpdate:                ", keyWriteOnly, nullptr);
+    testDenseMapUpdate(     "testDenseMapUpdate (with area):    ", areaWriteOnly, &area);
+    testMapIteration(       "testMapIteration:                  ", mapWriteOnly);
+    testDenseMapIteration(  "testDenseMapIteration:             ", keyWriteOnly, nullptr);
+    testDenseMapIteration(  "testDenseMapIteration (with area): ", areaWriteOnly, &area);
 
     return 0;
 }
