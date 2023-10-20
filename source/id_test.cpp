@@ -174,8 +174,50 @@ void testDenseMapIteration(std::string prefix, auto subtract, id::Area<id::id_t,
     std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
 }
 
+void testSet() {
+    auto s = id::Set();
+    std::cout << "testSet has maybe: expected: false, actual: " << s.Has("Should not generate identifier") << std::endl;
+    std::cout << "testSet ensure maybe works: expected: -1, actual: " << id::memory.Peek("Should not generate identifier") << std::endl;
+
+    s.Add("This should exist now");
+    s.Add("Okay!");
+
+    auto size = 0;
+    for (auto id : s) {
+        size++;
+        std::cout << "testSet iteration: " << id << std::endl;
+    }
+    std::cout << "testSet add then iteration size: expected: 2, actual: " << size << std::endl;
+
+    s.Remove("This should exist now");
+
+    std::cout << "testSet has removed: expected: 0, actual: " << s.Has("This should exist now") << std::endl;
+}
+
+void testSmallSet() {
+    auto s = id::SmallSet();
+    std::cout << "testSmallSet has maybe: expected: false, actual: " << s.Has("Should not generate identifier") << std::endl;
+    std::cout << "testSmallSet ensure maybe works: expected: -1, actual: " << id::memory.Peek("Should not generate identifier") << std::endl;
+
+    s.Add("This should exist now");
+    s.Add("Okay!");
+
+    auto size = 0;
+    for (auto id : s) {
+        size++;
+        std::cout << "testSmallSet iteration: " << id << std::endl;
+    }
+    std::cout << "testSmallSet add then iteration size: expected: 2, actual: " << size << std::endl;
+
+    s.Remove("This should exist now");
+
+    std::cout << "testSmallSet has removed: expected: 0, actual: " << s.Has("This should exist now") << std::endl;
+}
+
 int main() {
     testBasic();
+    testSet();
+    testSmallSet();
     populateKeys();
 
     std::cout << std::fixed << std::setprecision(9);

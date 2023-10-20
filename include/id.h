@@ -1,9 +1,12 @@
+#pragma once
 #include <stdint.h>
 #include <vector>
 #include <map>
 #include <string>
 #include <cstring>
 #include <ranges>
+#include <iterator>
+#include <cstddef>
 
 // Strings aren't the best for games. Their data is scattered, divided, leaderless!
 // Games like contiguous data with constant time operations. 
@@ -21,11 +24,14 @@
 // - Promise constant time conversion from string like data into an int. 
 //   This should be done as soon as possible, and the engine should use the uid/Identifier in its class members.
 // - Validate you are using it correctly. This is not made for receiving unvalidated user input.
+// - Keep track of identifiers that are no longer need by the application. Once created it will exist for the duration of the application.
 // 
 // Some things to remember:
 // - Anytime you have Identifier as a function parameter and a `std::string` or `const char*` is passed to 
 //   the function it could result in the data generating a new identifier and saving those characters in memory for future reference. 
 //   The only time this is not true is if a raw Identifier value is passed to the function that has an existing uid.
+// - Anytime you create an identifier it will exist forever. Identifiers are for strings you expect to exist for the length of the game
+//   or to be used so frequently its desirable to keep the character data in one place.
 namespace id {
     using id_t = uint32_t;
     using storage_t = uint32_t;
@@ -90,6 +96,16 @@ namespace id {
             auto pageIndex = m_storage[uid];
             auto page = m_pages[pageIndex >> m_pagePower];
             return page + (pageIndex & m_pageMask);
+        }
+
+        // Returns the unique id for the character data if it exists,
+        // otherwise -1 is returned.
+        const int32_t Peek(const char* chars) {
+            if (chars == nullptr || *chars == '\0') {
+                return 0;
+            }
+            auto found = m_ids.find(chars);
+            return found == m_ids.end() ? -1 : found->second;
         }
 
         // Generates an Identifier for the given input. 
@@ -202,6 +218,54 @@ namespace id {
 
         // You can feed an identifier into an ostream and it sends the character data.
         friend std::ostream& operator<<(std::ostream& os, const Identifier& id) {
+            os << id.Chars();
+            return os;
+        }
+    };
+
+    
+    // A potential identifier. This does not create an identifier, but is a way to see
+    // if an identifier has been defined, exists in a collection, etc without creating it.
+    class IdentifierMaybe {
+    public:
+        // A unique id for a string or -1 if it doesn't exist.
+        int32_t uid;
+
+        // Creates an identifier to an empty set of chars
+        IdentifierMaybe(): uid(0) {}
+        // Creates an identifier with a known unique id.
+        IdentifierMaybe(id_t u): uid(u) {}
+        // Creates an identifier with a known unique id.
+        IdentifierMaybe(Identifier id): uid(id.uid) {}
+        // Creates an identifier given `const char*`, generating one and saving this data if required.
+        IdentifierMaybe(const char* chars): uid(memory.Peek(chars)) {} 
+        // Creates an identifier given `std::string`, generating one and saving this data if required.
+        IdentifierMaybe(const std::string& str): uid(memory.Peek(str.c_str())) {}
+
+        // If this points to an already defined identifier
+        constexpr bool Exists() const noexcept { return uid != -1; }
+        // Returns the chars for this identifier or a nullptr if the identifier does not exist.
+        inline const char* Chars() const noexcept { return uid == -1 ? nullptr : memory.LookupChars(uid); }
+        // Returns the string of this identifier. This resolves in a copy
+        // operation from the character storage and into a string instance.
+        inline std::string String() const noexcept { return std::string(Chars()); }
+        // Returns the char index in the character storage this identifier is stored.
+        inline int32_t Storage() const noexcept { return memory.Storage(uid); }
+        // Returns the length of this identifier in characters.
+        inline size_t Len() const noexcept { return strlen(Chars()); }
+
+        // Automatically cast an identifier to `const char*`.
+        inline operator const char*() const noexcept { return Chars(); }
+        // Automatically cast an identifier to `std::string`.
+        inline operator const std::string() const noexcept { return String(); }
+
+        // Comparison operator for identifiers.
+        constexpr bool operator==(const Identifier& id) { return id.uid == uid; }
+        // Comparison operator for identifier maybe.
+        constexpr bool operator==(const IdentifierMaybe& id) { return id.uid == uid; }
+
+        // You can feed an identifier into an ostream and it sends the character data.
+        friend std::ostream& operator<<(std::ostream& os, const IdentifierMaybe& id) {
             os << id.Chars();
             return os;
         }
@@ -338,24 +402,28 @@ namespace id {
             Take(id) = std::move(value);
         }
         // Returns the const value at the given identifier or a value created using the empty constructor if it doesn't exist.
-        inline const V Get(Identifier id) const noexcept {
-            auto mapID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
-            if (mapID >= 0 && mapID < m_values.size()) {
-                return m_values[mapID];
+        inline const V Get(IdentifierMaybe id) const noexcept {
+            if (id.Exists()) {
+                auto mapID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
+                if (mapID >= 0 && mapID < m_values.size()) {
+                    return m_values[mapID];
+                }
             }
             return V();
         }
         // Returns the value at the given identifier or a value created using the empty constructor if it doesn't exist.
-        inline V Get(Identifier id) noexcept {
+        inline V Get(IdentifierMaybe id) noexcept {
             auto p = Ptr(id);
             return p == nullptr ? V() : *p;
         }
         // Returns the pointer of the value with the given identifier or null. The pointer returned
         // if non-null doesn't mean the value was actually added since this is a sparse map.
-        inline V* Ptr(Identifier id) noexcept {
-            auto mapID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
-            if (mapID >= 0 && mapID < m_values.size()) {
-                return &m_values[mapID];
+        inline V* Ptr(IdentifierMaybe id) noexcept {
+            if (id.Exists()) {
+                auto mapID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
+                if (mapID >= 0 && mapID < m_values.size()) {
+                    return &m_values[mapID];
+                }
             }
             return nullptr;
         }
@@ -436,13 +504,16 @@ namespace id {
             Take(id) = std::move(value);
         }
         // Returns the value at the given identifier or a value created using the empty constructor if it doesn't exist.
-        inline V Get(Identifier id) noexcept {
+        inline V Get(IdentifierMaybe id) noexcept {
             auto p = Ptr(id);
             return p == nullptr ? V() : *p;
         }
         // Returns the pointer to value in the map set with the identifier.
         // If the identifier was never set or taken then nullptr is returned.
-        V* Ptr(Identifier id) noexcept {
+        V* Ptr(IdentifierMaybe id) noexcept {
+            if (!id.Exists()) {
+                return nullptr;
+            }
             auto areaID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
             if (areaID < 0) {
                 return nullptr;
@@ -469,7 +540,10 @@ namespace id {
         // When order should be maintained the operation will take O(n) where n
         // is the current size of the map. When order does not need to be maintained
         // it performs O(1).
-        bool Remove(Identifier id, bool maintainOrder) {
+        bool Remove(IdentifierMaybe id, bool maintainOrder) {
+            if (!id.Exists()) {
+                return false;
+            }
             auto areaID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
             if (areaID == -1) {
                 return false;
@@ -505,6 +579,10 @@ namespace id {
         inline V& operator [](const std::string& str) {
             return Take(str);
         }
+    
+        // Returns iterators for all the values in the map.
+        auto begin() { return m_values.begin(); }
+        auto end()   { return m_values.end(); }
     };
 
     // A dense map that can fit no more than 2^8-1 values.
@@ -560,13 +638,16 @@ namespace id {
             Take(id) = std::move(value);
         }
         // Returns the value at the given identifier or a value created using the empty constructor if it doesn't exist.
-        inline V Get(Identifier id) noexcept {
+        inline V Get(IdentifierMaybe id) noexcept {
             auto p = Ptr(id);
             return p == nullptr ? V() : *p;
         }
         // Returns the pointer to value in the map set with the identifier.
         // If the identifier was never set or taken then nullptr is returned.
-        V* Ptr(Identifier id) noexcept {
+        V* Ptr(IdentifierMaybe id) noexcept {
+            if (!id.Exists()) {
+                return nullptr;
+            }
             auto areaID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
             if (areaID < 0) {
                 return nullptr;
@@ -594,7 +675,10 @@ namespace id {
         // When order should be maintained the operation will take O(n) where n
         // is the current size of the map. When order does not need to be maintained
         // it performs O(1).
-        bool Remove(Identifier id, bool maintainOrder) {
+        bool Remove(IdentifierMaybe id, bool maintainOrder) {
+            if (!id.Exists()) {
+                return false;
+            }
             auto areaID = m_area == nullptr ? id.uid : m_area->Peek(id.uid);
             if (areaID == -1) {
                 return false;
@@ -634,6 +718,10 @@ namespace id {
         inline V& operator [](const std::string& str) {
             return Take(str);
         }
+    
+        // Returns iterators for all the values in the map.
+        auto begin() { return m_values.begin(); }
+        auto end()   { return m_values.end(); }
     };
 
     // A dense key map that can fit no more than 2^8-1 values.
@@ -647,5 +735,182 @@ namespace id {
     // A dense key map that can fit no more than 2^32-1 values.
     template<typename V>
     using DenseKeyMap32 = DenseKeyMap<V, id_t, uint32_t>;
+
+    // A unique unordered set of identifiers.
+    // This will potentially grow to the larget identifier added to it (in bits).
+    // This is ideal for holding a large number of identifiers and would perform better the longer
+    // it exists given that the underlying data can be large if you have a high number of identifiers.
+    class Set {
+        // The presence of an identifier in the set is kept track of with a bit.
+        std::vector<uint64_t> m_bits;
+
+    public:
+        // Creates an empty set that can grow based on the number of global identifiers.
+        // The bit set will only grow to fit the largest identifier used.
+        Set(): m_bits(1) {}
+        // Creates an empty set that can grow based on the number of global identifiers.
+        // The bit set will only grow to fit the largest identifier used.
+        Set(size_t initialCapacity):  m_bits((initialCapacity >> 6) | 1) {}
+
+        // Adds the given identifier to the set.
+        void Add(Identifier id) {
+            uint32_t bitBucket = id.uid >> 6;
+            if (bitBucket >= m_bits.size()) {
+                m_bits.resize(bitBucket + 1);
+            }
+            auto bitIndex = id.uid & 63;
+            uint64_t bitShift = 1 << bitIndex;
+            m_bits[bitBucket] |= bitShift;
+        }
+        // Returns true if the identifier exists in the set.
+        bool Has(IdentifierMaybe id) {
+            if (!id.Exists()) {
+                return false;
+            }
+            uint32_t bitBucket = id.uid >> 6;
+            if (bitBucket >= m_bits.size()) {
+                return false;
+            }
+            auto bitIndex = id.uid & 63;
+            uint64_t bitShift = 1 << bitIndex;
+            return (m_bits[bitBucket] & bitShift) != 0;
+        }
+        // Removes the identifier from the map if it exists.
+        void Remove(IdentifierMaybe id) {
+            if (!id.Exists()) {
+                return;
+            }
+            uint32_t bitBucket = id.uid >> 6;
+            if (bitBucket >= m_bits.size()) {
+                return;
+            }
+            auto bitIndex = id.uid & 63;
+            uint64_t bitMask = ~(1 << bitIndex);
+            m_bits[bitBucket] &= bitMask;
+        }
+        // Returns iterators for all the identifiers in the set.
+        auto begin() { return Iterator(this); }
+        auto end()   { return Iterator(-1); }
+    private:
+        int32_t OnAfter(int32_t index) {
+            auto max = Max();
+            uint32_t start = index + 1;
+            if (start > uint32_t(max)) {
+                return -1;
+            }
+            auto startIndex = start >> 6;
+            auto startBits = start & 63;
+            auto valueIndex = startIndex;
+            auto value = m_bits[valueIndex];
+            value &= ~((1 << startBits) - 1);
+            auto valuesMax = m_bits.size();
+            while (value == 0) {
+                valueIndex++;
+                if (valueIndex == valuesMax) {
+                    return -1;
+                }
+                value = m_bits[valueIndex];
+            }
+            auto next = (valueIndex - startIndex) << 6;
+            next += start;
+            next += TrailingZeros(value);
+            next -= startBits;
+            return int32_t(next);
+        }
+        int32_t Max() {
+            return (m_bits.size() << 6) - 1;
+        }
+        uint32_t TrailingZeros(uint64_t n) {
+            uint32_t bits = 0;
+            uint64_t x = n;
+            if (x) {
+                if (!(x & 0x00000000FFFFFFFF)) { bits += 32; x >>= 32; }
+                if (!(x & 0x000000000000FFFF)) { bits += 16; x >>= 16; }
+                if (!(x & 0x00000000000000FF)) { bits +=  8; x >>=  8; }
+                if (!(x & 0x000000000000000F)) { bits +=  4; x >>=  4; }
+                if (!(x & 0x0000000000000003)) { bits +=  2; x >>=  2; }
+                bits += (x & 1) ^ 1;
+            }
+            return bits;
+        }
+        int32_t LastOn() {
+            for (int i = m_bits.size() - 1; i >= 0; --i) {
+                auto v = m_bits[i];
+                if (v != 0) {
+                    return int32_t((v << 6) + TrailingZeros(v));
+                }
+            }
+            return -1;
+        }
+        
+        struct Iterator {
+            using iterator_category = std::forward_iterator_tag;
+            using difference_type   = std::ptrdiff_t;
+            using value_type        = Identifier;
+            using pointer           = Identifier;
+            using reference         = Identifier;
+
+            Set* m_set;
+            int32_t m_uid;
+
+            Iterator(Set* set): m_set(set), m_uid(set->OnAfter(-1)) {}
+            Iterator(int32_t uid): m_set(nullptr), m_uid(uid) {}
+
+            reference operator*() const { return Identifier(m_uid); }
+            pointer operator->() { return Identifier(m_uid); }
+            Iterator& operator++() { m_uid = m_set->OnAfter(m_uid); return *this; }  
+            Iterator operator++(int) { Iterator tmp = *this; ++(*this); return tmp; }
+            friend bool operator== (const Iterator& a, const Iterator& b) { return a.m_uid == b.m_uid; };
+            friend bool operator!= (const Iterator& a, const Iterator& b) { return a.m_uid != b.m_uid; };              
+        };
+    };
+
+    // A unique unordered set of identifiers tailored for a small number of identifiers.
+    // The memory usage and performance of this set are relative to the number of unique identifiers in it.
+    class SmallSet {
+        // All identifiers are stored in a vector.
+        std::vector<Identifier> m_ids;
+
+    public:
+        // Creates an empty set that can grow based on the number of global identifiers.
+        // The bit set will only grow to fit the largest identifier used.
+        SmallSet(): m_ids() {}
+
+        // Adds the given identifier to the set.
+        void Add(Identifier id) {
+            if (!Has(id)) {
+                m_ids.push_back(id);
+            }
+        }
+        // Returns true if the identifier exists in the set.
+        bool Has(IdentifierMaybe id) {
+            if (!id.Exists()) {
+                return false;
+            }
+            for (auto has : m_ids) {
+                if (has.uid == id.uid) {
+                    return true;
+                }
+            }
+            return false;
+        }   
+        // Removes the identifier from the map if it exists.
+        void Remove(IdentifierMaybe id) {
+            if (!id.Exists()) {
+                return;
+            }
+            auto itr = m_ids.begin();
+            while (itr != m_ids.end()) {
+                if (itr->uid == id.uid) {
+                    m_ids.erase(itr);
+                    break;
+                }
+            }
+        }
+        // Returns iterators for all the identifiers in the set.
+        auto begin() { return m_ids.begin(); }
+        auto end()   { return m_ids.end(); }
+    };
+
 
 }
