@@ -293,6 +293,11 @@ namespace id {
             }
             return int(removedTo) - 1;
         }
+        // Clears out the area.
+        void Clear() {
+            m_tos.clear();
+            m_next = 0;
+        }
     };
 
     // A sparse map is a map potentially with empty values scattered throughout.
@@ -363,6 +368,10 @@ namespace id {
                 m_values.resize(mapID + m_resizeBuffer + 1);
             }
             return m_values[mapID];
+        }
+        // Clears out the sparse map of all values.
+        void Clear() noexcept {
+            m_values.clear();
         }
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
@@ -477,6 +486,11 @@ namespace id {
             }
             return true;
         }
+        // Clears all values from this map.
+        void Clear() {
+            m_local.Clear();
+            m_values.clear();
+        }
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
         inline V& operator [](const char* chars) {
@@ -505,7 +519,6 @@ namespace id {
     template<typename V>
     using DenseMap32 = DenseMap<V, id_t, uint32_t>;
 
-    
 
     // A dense key map has all keys & values stored in initial set order in contiguous memory.
     // It achieves this by having its own local area where it translates unique/area ids
@@ -600,6 +613,12 @@ namespace id {
                 m_keys.pop_back();
             }
             return true;
+        }
+        // Clears all keys and values from this map.
+        void Clear() noexcept {
+            m_local.Clear();
+            m_values.clear();
+            m_keys.clear();
         }
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
