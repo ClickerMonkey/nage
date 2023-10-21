@@ -88,7 +88,7 @@ auto testMapWrite(std::string prefix) {
     }
     auto end = std::chrono::steady_clock::now();;
     auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (duration * 0.000000001) << "s for writes: " << (mapRounds * keyCount) << std::endl;
     return duration;
 }
 
@@ -102,76 +102,80 @@ auto testDenseMapWrite(std::string prefix, id::Area<id::id_t, uint16_t>* area) {
     }
     auto end = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (duration * 0.000000001) << "s for writes: " << (mapRounds * keyCount) << std::endl;
     return duration;
 }
 
 void testMapUpdate(std::string prefix, auto subtract) {
-    auto start = std::chrono::steady_clock::now();
+    long long total = 0;
     for (int i = 0; i < mapRounds; i++) {
         auto m = std::map<std::string, int>();
         for (int i = 0; i < keyCount; i++) {
             m[mapKeys[i]] = 0;
         }
+        auto start = std::chrono::steady_clock::now();
         for (int a = 0; a < accessCount; a++) {
             auto i = m.find(mapKeys[updateOrder[a]]);
             if (i != m.end()) {
                 i->second++;
             }
         }
+        auto end = std::chrono::steady_clock::now();
+        total += std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
     }
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (total * 0.000000001) << "s for updates: " << (mapRounds * accessCount) << std::endl;
 }
 
 void testDenseMapUpdate(std::string prefix, auto subtract, id::Area<id::id_t, uint16_t>* area) {
-    auto start = std::chrono::steady_clock::now();
+    long long total = 0;
     for (int i = 0; i < mapRounds; i++) {
         auto m = id::DenseMap<int, uint16_t, uint16_t>(area);
         for (int i = 0; i < keyCount; i++) {
             m.Set(idKeys[i], 0);
         }
+        auto start = std::chrono::steady_clock::now();
         for (int a = 0; a < accessCount; a++) {
             auto& v = m.Take(idKeys[updateOrder[a]]);
             v++;
         }
+        auto end = std::chrono::steady_clock::now();
+        total += std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
     }
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (total * 0.000000001) << "s for updates: " << (mapRounds * accessCount) << std::endl;
 }
 
 void testMapIteration(std::string prefix, auto subtract) {
-    auto start = std::chrono::steady_clock::now();
+    long long total = 0;
     for (int i = 0; i < mapRounds; i++) {
         auto m = std::map<std::string, int>();
         for (int i = 0; i < keyCount; i++) {
             m[mapKeys[i]] = 0;
         }
+        auto start = std::chrono::steady_clock::now();
         for (auto& p : m) {
             p.second++;
         }
+        auto end = std::chrono::steady_clock::now();
+        total += std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
     }
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (total * 0.000000001) << "s for iterations: " << (mapRounds * keyCount) << std::endl;
 }
 
 void testDenseMapIteration(std::string prefix, auto subtract, id::Area<id::id_t, uint16_t>* area) {
-    auto start = std::chrono::steady_clock::now();
+    long long total = 0;
     for (int i = 0; i < mapRounds; i++) {
         auto m = id::DenseMap<int, uint16_t, uint16_t>(area);
         for (int i = 0; i < keyCount; i++) {
             m.Set(idKeys[i], 0);
         }
-        for (auto& v : m.Values()) {
+        auto start = std::chrono::steady_clock::now();
+        for (auto& v : m) {
             v++;
         }
+        auto end = std::chrono::steady_clock::now();
+        total += std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
     }
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count();
-    std::cout << prefix << (duration * 0.000000001) << "s" << std::endl;
+    std::cout << prefix << (total * 0.000000001) << "s for iterations: " << (mapRounds * keyCount) << std::endl;
 }
 
 void testSet() {

@@ -207,6 +207,8 @@ namespace id {
         inline storage_t Storage() const noexcept { return memory.Storage(uid); }
         // Returns the length of this identifier in characters.
         inline size_t Len() const noexcept { return strlen(Chars()); }
+        // Returns true if this identifier is the nullptr/empty string.
+        inline bool Empty() const noexcept { return uid == 0; }
 
         // Automatically cast an identifier to `const char*`.
         inline operator const char*() const noexcept { return Chars(); }
@@ -358,11 +360,34 @@ namespace id {
             return int(removedTo) - 1;
         }
         // Clears out the area.
-        void Clear() {
+        void Clear() noexcept {
             m_tos.clear();
             m_next = 0;
         }
+        // Returns the number of ids in this area.
+        auto Size() const noexcept {
+            return m_tos.size();
+        }
+        // Returns true if there are no ids in this area.
+        auto Empty() const noexcept {
+            return m_tos.empty();
+        } 
     };
+
+    // An area to the given type from a unique identifier.
+    template<typename To>
+    using BaseArea = Area<id_t, To>;
+
+    // An area to use when you know there won't be any more than 255 unique identiers used by the maps this is passed to.
+    using BaseArea8 = Area<id_t, uint8_t>;
+
+    // An area to use when you know there won't be any more than 65,535 unique identiers used by the maps this is passed to.
+    using BaseArea16 = Area<id_t, uint16_t>;
+
+    // An area to use when you expect there will be more than 65,535 unique identifiers used by the maps this is passed to.
+    // You can use this to be safe, but it only makes sense to use if you translate the most common identifiers in the area
+    // first so they have lower area ids.
+    using BaseArea32 = Area<id_t, uint16_t>;
 
     // A sparse map is a map potentially with empty values scattered throughout.
     // There's no way to know if an identifier has been added to the map - but
@@ -440,6 +465,14 @@ namespace id {
         // Clears out the sparse map of all values.
         void Clear() noexcept {
             m_values.clear();
+        }
+        // Returns the maximum number of values in this map.
+        auto Size() const noexcept {
+            return m_values.size();
+        }
+        // Returns true if there are probably no values in this map.
+        auto Empty() const noexcept {
+            return m_values.empty();
         }
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
@@ -561,10 +594,18 @@ namespace id {
             return true;
         }
         // Clears all values from this map.
-        void Clear() {
+        void Clear() noexcept {
             m_local.Clear();
             m_values.clear();
         }
+        // Returns the number of values in this map.
+        auto Size() const noexcept {
+            return m_values.size();
+        }
+        // Returns true if there are no values in this map.
+        auto Empty() const noexcept {
+            return m_values.empty();
+        } 
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
         inline V& operator [](const char* chars) {
@@ -704,6 +745,14 @@ namespace id {
             m_values.clear();
             m_keys.clear();
         }
+        // Returns the number of values in this map.
+        auto Size() const noexcept {
+            return m_values.size();
+        }
+        // Returns true if there are no values in this map.
+        auto Empty() const noexcept {
+            return m_values.empty();
+        } 
         // Access the reference to the value identified with the characters.
         // Using this may generate the identifier. 
         inline V& operator [](const char* chars) {
