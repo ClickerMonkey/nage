@@ -343,11 +343,17 @@ namespace id {
         //   be what was removed infavor of the from.
         // If we didn't remove anything then -1 is returned.
         int Remove(From from, bool maintainOrder) {
-            if (from > m_tos.size() || m_tos[from] == 0) {
+            if (from >= m_tos.size() || m_tos[from] == 0) {
                 return -1;
             }
             m_next--;
             auto removedTo = m_tos[from];
+            m_tos[from] = 0;
+
+            if (removedTo == m_next) {
+                return int(removedTo) - 1;
+            }
+
             if (maintainOrder) {
                 for (auto& to : m_tos) {
                     if (to > removedTo) {
@@ -355,7 +361,12 @@ namespace id {
                     }
                 }
             } else {
-                m_tos[from] = m_tos[m_next];
+                for (int i = m_tos.size() - 1; i >= 0; --i) {
+                    if (m_tos[i] == m_next) {
+                        m_tos[i] = removedTo;
+                        break;
+                    }
+                }
             }
             return int(removedTo) - 1;
         }
